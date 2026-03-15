@@ -10,7 +10,10 @@ async function generateSessionId(gitManager: GitManager): Promise<string> {
   return String(nextId);
 }
 
-function attachTerminal(handle: { onData: (cb: (data: string) => void) => void }): void {
+function attachTerminal(handle: {
+  onData: (cb: (data: string) => void) => void;
+  write: (data: string) => void;
+}): void {
   handle.onData((data) => {
     process.stdout.write(data);
   });
@@ -20,7 +23,7 @@ function attachTerminal(handle: { onData: (cb: (data: string) => void) => void }
   }
   process.stdin.resume();
   process.stdin.on('data', (data) => {
-    (handle as { write: (d: string) => void }).write(data.toString());
+    handle.write(data.toString());
   });
 }
 
