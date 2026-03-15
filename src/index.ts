@@ -16,6 +16,7 @@ export type { Session, SessionStatus } from './session/types.js';
 export { PtySpawner } from './pty/spawner.js';
 export type { PtyHandle, SpawnOptions } from './pty/types.js';
 export { startDashboard } from './tui/index.js';
+export type { DashboardDeps, DashboardState } from './tui/index.js';
 export { computeLayout } from './tui/index.js';
 export type { PanelDimensions } from './tui/index.js';
 export { getStatusIndicator, formatStatus } from './tui/index.js';
