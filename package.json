@@ -1,0 +1,40 @@
+{
+  "name": "source-verse",
+  "version": "0.1.0",
+  "description": "Run multiple Claude Code sessions in parallel from a single terminal",
+  "type": "module",
+  "bin": {
+    "source-verse": "./bin/source-verse.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" \"bin/**/*.ts\" --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"bin/**/*.ts\""
+  },
+  "keywords": [
+    "claude",
+    "ai",
+    "cli",
+    "parallel",
+    "terminal"
+  ],
+  "author": "Prakhar Tripathi",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "22.13.9",
+    "@typescript-eslint/eslint-plugin": "8.26.1",
+    "@typescript-eslint/parser": "8.26.1",
+    "eslint": "9.22.0",
+    "prettier": "3.5.3",
+    "tsx": "4.19.3",
+    "typescript": "5.9.3",
+    "vitest": "3.0.8"
+  },
+  "packageManager": "pnpm@10.23.0"
+}
