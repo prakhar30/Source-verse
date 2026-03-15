@@ -11,3 +11,5 @@ export { GitManager } from './git/manager.js';
 export type { WorktreeInfo } from './git/manager.js';
 export { execGit, GitCommandError } from './git/exec.js';
 export { slugifyTaskName } from './git/slugify.js';
+export { SessionManager } from './session/manager.js';
+export type { Session, SessionStatus } from './session/types.js';

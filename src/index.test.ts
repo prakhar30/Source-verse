@@ -7,6 +7,7 @@ import {
   execGit,
   GitCommandError,
   slugifyTaskName,
+  SessionManager,
 } from './index.js';
 
 describe('public API exports', () => {
@@ -36,5 +37,9 @@ describe('public API exports', () => {
 
   it('exports slugifyTaskName', () => {
     expect(typeof slugifyTaskName).toBe('function');
+  });
+
+  it('exports SessionManager', () => {
+    expect(typeof SessionManager).toBe('function');
   });
 });
