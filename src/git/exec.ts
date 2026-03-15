@@ -15,7 +15,8 @@ export function execGit(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd }, (error, stdout, stderr) => {
       if (error) {
-        reject(new GitCommandError(args, error.code ?? null, stderr));
+        const exitCode = typeof error.code === 'number' ? error.code : null;
+        reject(new GitCommandError(args, exitCode, stderr));
         return;
       }
       resolve(stdout);
