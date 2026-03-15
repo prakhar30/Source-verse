@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { createProgram, isGitRepository, assertGitRepository } from './index.js';
+import {
+  createProgram,
+  isGitRepository,
+  assertGitRepository,
+  GitManager,
+  execGit,
+  GitCommandError,
+  slugifyTaskName,
+} from './index.js';
 
 describe('public API exports', () => {
   it('exports createProgram', () => {
@@ -12,5 +20,21 @@ describe('public API exports', () => {
 
   it('exports assertGitRepository', () => {
     expect(typeof assertGitRepository).toBe('function');
+  });
+
+  it('exports GitManager', () => {
+    expect(typeof GitManager).toBe('function');
+  });
+
+  it('exports execGit', () => {
+    expect(typeof execGit).toBe('function');
+  });
+
+  it('exports GitCommandError', () => {
+    expect(typeof GitCommandError).toBe('function');
+  });
+
+  it('exports slugifyTaskName', () => {
+    expect(typeof slugifyTaskName).toBe('function');
   });
 });
