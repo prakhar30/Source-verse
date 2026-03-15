@@ -1,5 +1,26 @@
-export function handleNew(task: string): void {
-  console.log(`new: not implemented yet (task: "${task}")`);
+import { GitManager } from '../git/manager.js';
+import { slugifyTaskName } from '../git/slugify.js';
+
+
+async function generateSessionId(gitManager: GitManager): Promise<string> {
+  const existing = await gitManager.listWorktrees();
+  const usedIds = existing.map((worktree) => Number(worktree.sessionId)).filter(Number.isFinite);
+  const nextId = usedIds.length > 0 ? Math.max(...usedIds) + 1 : 1;
+  return String(nextId);
+}
+
+export async function handleNew(task: string, repoPath = process.cwd()): Promise<void> {
+  const gitManager = new GitManager(repoPath);
+  const branchName = slugifyTaskName(task);
+  const sessionId = await generateSessionId(gitManager);
+
+  const worktreePath = await gitManager.createWorktree(sessionId, branchName);
+  const defaultBranch = await gitManager.getDefaultBranch();
+
+  console.log('');
+  console.log(`  ✓ Created worktree: ${worktreePath}`);
+  console.log(`  ✓ Branched: ${branchName} (from ${defaultBranch})`);
+  console.log('');
 }
 
 export function handleList(): void {

@@ -35,8 +35,8 @@ export function createProgram(): Command {
   program
     .command('new <task>')
     .description('Create a new session with the given task description')
-    .action((task: string) => {
-      handleNew(task);
+    .action(async (task: string) => {
+      await handleNew(task);
     });
 
   program
