@@ -66,6 +66,20 @@ export class SessionManager {
     return session;
   }
 
+  async updatePid(id: string, pid: number | null): Promise<Session> {
+    const sessions = await this.loadSessions();
+    const session = sessions.find((s) => s.id === id);
+
+    if (!session) {
+      throw new Error(`Session not found: ${id}`);
+    }
+
+    session.pid = pid;
+    session.updatedAt = new Date().toISOString();
+    await this.saveSessions(sessions);
+    return session;
+  }
+
   async removeSession(id: string): Promise<void> {
     const sessions = await this.loadSessions();
     const index = sessions.findIndex((s) => s.id === id);
