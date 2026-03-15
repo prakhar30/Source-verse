@@ -8,6 +8,7 @@ import {
   GitCommandError,
   slugifyTaskName,
   SessionManager,
+  PtySpawner,
 } from './index.js';
 
 describe('public API exports', () => {
@@ -41,5 +42,9 @@ describe('public API exports', () => {
 
   it('exports SessionManager', () => {
     expect(typeof SessionManager).toBe('function');
+  });
+
+  it('exports PtySpawner', () => {
+    expect(typeof PtySpawner).toBe('function');
   });
 });

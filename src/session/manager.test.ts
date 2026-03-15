@@ -147,6 +147,50 @@ describe('SessionManager', () => {
     });
   });
 
+  describe('updatePid', () => {
+    it('sets the PID on a session', async () => {
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const updated = await manager.updatePid(created.id, 42);
+
+      expect(updated.pid).toBe(42);
+    });
+
+    it('clears the PID when set to null', async () => {
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      await manager.updatePid(created.id, 42);
+      const cleared = await manager.updatePid(created.id, null);
+
+      expect(cleared.pid).toBeNull();
+    });
+
+    it('updates the updatedAt timestamp', async () => {
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const updated = await manager.updatePid(created.id, 99);
+
+      expect(new Date(updated.updatedAt).getTime()).toBeGreaterThan(
+        new Date(created.updatedAt).getTime(),
+      );
+    });
+
+    it('persists the PID change to disk', async () => {
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      await manager.updatePid(created.id, 555);
+
+      const freshManager = new SessionManager(tempDir);
+      const reloaded = await freshManager.getSession(created.id);
+
+      expect(reloaded?.pid).toBe(555);
+    });
+
+    it('throws for an unknown session ID', async () => {
+      await expect(manager.updatePid('nonexistent', 1)).rejects.toThrow(
+        'Session not found: nonexistent',
+      );
+    });
+  });
+
   describe('removeSession', () => {
     it('removes a session by ID', async () => {
       const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
