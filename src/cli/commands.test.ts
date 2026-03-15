@@ -4,7 +4,14 @@ vi.mock('../git/slugify.js', () => ({
   slugifyTaskName: vi.fn(),
 }));
 
-import { handleNew, handleList, handleSwitch, handleStop, handleStatus } from './commands.js';
+import {
+  handleNew,
+  handleList,
+  handleSwitch,
+  handleStop,
+  handleCleanup,
+  handleStatus,
+} from './commands.js';
 import { slugifyTaskName } from '../git/slugify.js';
 
 const mockSlugify = vi.mocked(slugifyTaskName);
@@ -612,6 +619,193 @@ describe('handleStop', () => {
 
     const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Process is no longer running');
+  });
+});
+
+describe('handleCleanup', () => {
+  let mockSessionManager: ReturnType<typeof createMockSessionManager>;
+  let mockGitManager: ReturnType<typeof createMockGitManager>;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+  let originalIsTTY: boolean | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessionManager = createMockSessionManager();
+    mockGitManager = createMockGitManager();
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    originalIsTTY = process.stdin.isTTY;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, writable: true });
+  });
+
+  function callHandleCleanup() {
+    return handleCleanup('/projects/app', {
+      sessionManager: mockSessionManager as never,
+      gitManager: mockGitManager as never,
+    });
+  }
+
+  function simulateTTYConfirmation(answer: string) {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, writable: true });
+    const originalOnce = process.stdin.once.bind(process.stdin);
+    vi.spyOn(process.stdin, 'once').mockImplementation(((event: string, cb: (data: string) => void) => {
+      if (event === 'data') {
+        cb(answer);
+        return process.stdin;
+      }
+      return originalOnce(event, cb);
+    }) as typeof process.stdin.once);
+  }
+
+  it('shows message when no sessions to clean up', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([]);
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('No sessions to clean up');
+  });
+
+  it('shows message when only cleaned_up sessions exist', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ status: 'cleaned_up' }),
+    ]);
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('No sessions to clean up');
+  });
+
+  it('warns about skipped active sessions', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ id: 'running1-0000-0000-0000-000000000000', status: 'running', branchName: 'sv/active-task' }),
+      createTestSession({ id: 'done1234-0000-0000-0000-000000000000', status: 'done', branchName: 'sv/finished-task' }),
+    ]);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+    mockGitManager.listWorktrees.mockResolvedValue([]);
+
+    simulateTTYConfirmation('y');
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Skipping running1');
+    expect(output).toContain('status is running');
+  });
+
+  it('shows preview of sessions to clean up', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ id: 'done1234-0000-0000-0000-000000000000', status: 'done', branchName: 'sv/task-one' }),
+    ]);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+    mockGitManager.listWorktrees.mockResolvedValue([]);
+
+    simulateTTYConfirmation('y');
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Sessions to clean up');
+    expect(output).toContain('done1234');
+    expect(output).toContain('sv/task-one');
+  });
+
+  it('cleans up done and merged sessions after confirmation', async () => {
+    const doneSession = createTestSession({
+      id: 'done1234-0000-0000-0000-000000000000',
+      status: 'done',
+      worktreePath: '/projects/app-sv-1',
+    });
+    const mergedSession = createTestSession({
+      id: 'merged12-0000-0000-0000-000000000000',
+      status: 'merged',
+      worktreePath: '/projects/app-sv-2',
+    });
+
+    mockSessionManager.listSessions.mockResolvedValue([doneSession, mergedSession]);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+    mockGitManager.listWorktrees.mockResolvedValue([
+      { path: '/projects/app-sv-1', branch: 'sv/task-one', sessionId: '1' },
+      { path: '/projects/app-sv-2', branch: 'sv/task-two', sessionId: '2' },
+    ]);
+    mockGitManager.removeWorktree.mockResolvedValue(undefined);
+
+    simulateTTYConfirmation('y');
+
+    await callHandleCleanup();
+
+    expect(mockGitManager.removeWorktree).toHaveBeenCalledWith('1');
+    expect(mockGitManager.removeWorktree).toHaveBeenCalledWith('2');
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(doneSession.id, 'cleaned_up');
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(mergedSession.id, 'cleaned_up');
+  });
+
+  it('cancels cleanup when user declines', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ status: 'done' }),
+    ]);
+
+    simulateTTYConfirmation('n');
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Cleanup cancelled');
+    expect(mockGitManager.removeWorktree).not.toHaveBeenCalled();
+    expect(mockSessionManager.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('cancels cleanup when not a TTY', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, writable: true });
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ status: 'done' }),
+    ]);
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Cleanup cancelled');
+    expect(mockGitManager.removeWorktree).not.toHaveBeenCalled();
+  });
+
+  it('prints cleanup summary with freed space', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ status: 'done', worktreePath: '/projects/app-sv-1' }),
+    ]);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+    mockGitManager.listWorktrees.mockResolvedValue([
+      { path: '/projects/app-sv-1', branch: 'sv/task', sessionId: '1' },
+    ]);
+    mockGitManager.removeWorktree.mockResolvedValue(undefined);
+
+    simulateTTYConfirmation('y');
+
+    await callHandleCleanup();
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Cleaned up 1 session(s)');
+    expect(output).toContain('Freed');
+  });
+
+  it('skips worktree removal when worktree not found but still updates status', async () => {
+    const session = createTestSession({
+      id: 'done1234-0000-0000-0000-000000000000',
+      status: 'done',
+      worktreePath: '/projects/app-sv-gone',
+    });
+    mockSessionManager.listSessions.mockResolvedValue([session]);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+    mockGitManager.listWorktrees.mockResolvedValue([]);
+
+    simulateTTYConfirmation('y');
+
+    await callHandleCleanup();
+
+    expect(mockGitManager.removeWorktree).not.toHaveBeenCalled();
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'cleaned_up');
   });
 });
 
