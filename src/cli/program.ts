@@ -8,6 +8,7 @@ import {
   handleCleanup,
   handleStatus,
 } from './commands.js';
+import { startDashboard } from '../tui/dashboard.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json') as { version: string };
@@ -30,6 +31,13 @@ export function createProgram(): Command {
     .version(version, '-V, --version')
     .action(() => {
       console.log(WELCOME_MESSAGE);
+    });
+
+  program
+    .command('dashboard')
+    .description('Launch the interactive TUI dashboard')
+    .action(() => {
+      startDashboard();
     });
 
   program
