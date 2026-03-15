@@ -10,6 +10,22 @@ vi.mock('./commands.js', () => ({
   handleStatus: vi.fn(),
 }));
 
+vi.mock('../tui/dashboard.js', () => ({
+  startDashboard: vi.fn(),
+}));
+
+vi.mock('../session/manager.js', () => ({
+  SessionManager: vi.fn(),
+}));
+
+vi.mock('../git/manager.js', () => ({
+  GitManager: vi.fn(),
+}));
+
+vi.mock('../pty/spawner.js', () => ({
+  PtySpawner: vi.fn(),
+}));
+
 import {
   handleNew,
   handleList,
@@ -18,6 +34,7 @@ import {
   handleCleanup,
   handleStatus,
 } from './commands.js';
+import { startDashboard } from '../tui/dashboard.js';
 
 function parseArgs(...args: string[]) {
   const program = createProgram();
@@ -34,13 +51,13 @@ beforeEach(() => {
 });
 
 describe('createProgram', () => {
-  it('shows welcome message when no subcommand is given', async () => {
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('launches dashboard when no subcommand is given', async () => {
     await parseArgs();
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('source-verse'),
+    expect(startDashboard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repoPath: expect.any(String),
+      }),
     );
-    consoleSpy.mockRestore();
   });
 
   it('prints version with --version flag', async () => {

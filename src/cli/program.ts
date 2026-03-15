@@ -9,18 +9,12 @@ import {
   handleStatus,
 } from './commands.js';
 import { startDashboard } from '../tui/dashboard.js';
+import { SessionManager } from '../session/manager.js';
+import { GitManager } from '../git/manager.js';
+import { PtySpawner } from '../pty/spawner.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json') as { version: string };
-
-const WELCOME_MESSAGE = `
-  source-verse — parallel Claude Code session manager
-
-  No active sessions.
-
-  Press [n] to create a new session
-  or run: source-verse new "fix the login bug"
-`;
 
 export function createProgram(): Command {
   const program = new Command();
@@ -29,15 +23,14 @@ export function createProgram(): Command {
     .name('source-verse')
     .description('Run multiple Claude Code sessions in parallel from a single terminal')
     .version(version, '-V, --version')
-    .action(() => {
-      console.log(WELCOME_MESSAGE);
-    });
-
-  program
-    .command('dashboard')
-    .description('Launch the interactive TUI dashboard')
-    .action(() => {
-      startDashboard();
+    .action(async () => {
+      const repoPath = process.cwd();
+      await startDashboard({
+        sessionManager: new SessionManager(),
+        gitManager: new GitManager(repoPath),
+        ptySpawner: new PtySpawner(),
+        repoPath,
+      });
     });
 
   program

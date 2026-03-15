@@ -3,6 +3,7 @@
  */
 
 export { startDashboard } from './dashboard.js';
+export type { DashboardDeps, DashboardState } from './dashboard.js';
 export { computeLayout } from './layout.js';
 export type { PanelDimensions } from './layout.js';
 export { getStatusIndicator, formatStatus } from './status-indicator.js';
@@ -17,4 +18,3 @@ export {
   renderEmptyState,
 } from './panels.js';
 export { cursor, screen, style, box, visibleLength, fitText, writeRaw } from './renderer.js';
-export { MOCK_SESSIONS, MOCK_OUTPUT_LINES } from './mock-data.js';
