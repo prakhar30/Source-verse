@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
+import { createProgram, isGitRepository, assertGitRepository } from './index.js';
 
-/**
- * Placeholder test suite.
- * Real tests will be added alongside feature implementations.
- */
-describe('source-verse', () => {
-  it('placeholder — scaffolding is set up correctly', () => {
-    expect(true).toBe(true);
+describe('public API exports', () => {
+  it('exports createProgram', () => {
+    expect(typeof createProgram).toBe('function');
   });
 
-  it('environment is Node.js', () => {
-    expect(typeof process).toBe('object');
-    expect(typeof process.version).toBe('string');
+  it('exports isGitRepository', () => {
+    expect(typeof isGitRepository).toBe('function');
+  });
+
+  it('exports assertGitRepository', () => {
+    expect(typeof assertGitRepository).toBe('function');
   });
 });

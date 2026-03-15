@@ -2,32 +2,20 @@
 /**
  * source-verse CLI entry point
  *
- * This is the binary stub for the `source-verse` CLI command.
- * Command parsing and feature logic will be added in future issues.
+ * Validates we're in a git repository, then delegates to Commander
+ * for command parsing and dispatch.
  */
 
-const [, , ...args] = process.argv;
+import { assertGitRepository } from '../src/git/validation.js';
+import { createProgram } from '../src/cli/program.js';
 
-function main(argv: string[]): void {
-  if (argv.length === 0) {
-    console.log('source-verse — parallel Claude Code session manager');
-    console.log('');
-    console.log('Usage: source-verse [command]');
-    console.log('');
-    console.log('Commands:');
-    console.log('  (coming soon)');
-    console.log('');
-    console.log('Run source-verse --help for more information.');
-    return;
-  }
-
-  if (argv[0] === '--version' || argv[0] === '-v') {
-    console.log('0.1.0');
-    return;
-  }
-
-  console.log(`Unknown command: ${argv[0]}`);
-  process.exit(1);
+async function main(): Promise<void> {
+  await assertGitRepository(process.cwd());
+  const program = createProgram();
+  await program.parseAsync(process.argv);
 }
 
-main(args);
+main().catch((error: Error) => {
+  console.error(error.message);
+  process.exit(1);
+});
