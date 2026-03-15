@@ -13,3 +13,5 @@ export { execGit, GitCommandError } from './git/exec.js';
 export { slugifyTaskName } from './git/slugify.js';
 export { SessionManager } from './session/manager.js';
 export type { Session, SessionStatus } from './session/types.js';
+export { PtySpawner } from './pty/spawner.js';
+export type { PtyHandle, SpawnOptions } from './pty/types.js';
