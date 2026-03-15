@@ -302,8 +302,99 @@ export async function handleStop(
   }
 }
 
-export function handleCleanup(): void {
-  console.log('cleanup: not implemented yet');
+const CLEANABLE_STATUSES: SessionStatus[] = ['done', 'merged'];
+const ACTIVE_STATUSES: SessionStatus[] = ['running', 'waiting', 'created'];
+
+export async function handleCleanup(
+  repoPath = process.cwd(),
+  deps: {
+    sessionManager?: SessionManager;
+    gitManager?: GitManager;
+  } = {},
+): Promise<void> {
+  const sessionManager = deps.sessionManager ?? new SessionManager();
+  const gitManager = deps.gitManager ?? new GitManager(repoPath);
+
+  const sessions = await sessionManager.listSessions();
+
+  const cleanable = sessions.filter((s) => CLEANABLE_STATUSES.includes(s.status));
+  const skipped = sessions.filter((s) => ACTIVE_STATUSES.includes(s.status));
+
+  if (cleanable.length === 0) {
+    console.log('');
+    console.log('  No sessions to clean up.');
+    console.log('');
+    return;
+  }
+
+  if (skipped.length > 0) {
+    printSkippedWarnings(skipped);
+  }
+
+  await printCleanupPreview(cleanable);
+
+  const confirmed = process.stdin.isTTY
+    ? await confirmAction(`  Clean up ${cleanable.length} session(s)?`)
+    : false;
+
+  if (!confirmed) {
+    console.log('  Cleanup cancelled.');
+    return;
+  }
+
+  const freedSizes = await cleanupSessions(cleanable, sessionManager, gitManager);
+  printCleanupSummary(cleanable.length, freedSizes);
+}
+
+function printSkippedWarnings(skipped: Session[]): void {
+  for (const session of skipped) {
+    console.log(
+      `  ⚠ Skipping ${session.id.slice(0, 8)} (${session.branchName}): status is ${session.status}`,
+    );
+  }
+}
+
+async function printCleanupPreview(cleanable: Session[]): Promise<void> {
+  console.log('');
+  console.log('  Sessions to clean up:');
+  for (const session of cleanable) {
+    const size = await getDirectorySize(session.worktreePath);
+    console.log(
+      `    ${session.id.slice(0, 8)} (${session.branchName}) — ${session.status} — ${size}`,
+    );
+  }
+  console.log('');
+}
+
+async function cleanupSessions(
+  sessions: Session[],
+  sessionManager: SessionManager,
+  gitManager: GitManager,
+): Promise<string[]> {
+  const worktrees = await gitManager.listWorktrees();
+  const freedSizes: string[] = [];
+
+  for (const session of sessions) {
+    const size = await getDirectorySize(session.worktreePath);
+    const worktree = worktrees.find((w) => w.path === session.worktreePath);
+
+    if (worktree) {
+      await gitManager.removeWorktree(worktree.sessionId);
+      console.log(`  ✓ Removed worktree: ${session.worktreePath}`);
+    }
+
+    await sessionManager.updateStatus(session.id, 'cleaned_up');
+    freedSizes.push(size);
+  }
+
+  return freedSizes;
+}
+
+function printCleanupSummary(count: number, sizes: string[]): void {
+  const totalDisplay = sizes.filter((s) => s !== 'N/A').join(' + ') || 'unknown';
+  console.log('');
+  console.log(`  ✓ Cleaned up ${count} session(s). Freed: ${totalDisplay}`);
+  console.log('');
 }
 
 async function getDirectorySize(dirPath: string): Promise<string> {

@@ -64,8 +64,8 @@ export function createProgram(): Command {
   program
     .command('cleanup')
     .description('Remove all completed/merged session repo copies')
-    .action(() => {
-      handleCleanup();
+    .action(async () => {
+      await handleCleanup();
     });
 
   program
