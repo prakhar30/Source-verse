@@ -68,7 +68,12 @@ describe('createProgram', () => {
 
   it('calls handleStop with session id', async () => {
     await parseArgs('stop', '2');
-    expect(handleStop).toHaveBeenCalledWith('2');
+    expect(handleStop).toHaveBeenCalledWith('2', {});
+  });
+
+  it('calls handleStop with --cleanup flag', async () => {
+    await parseArgs('stop', '2', '--cleanup');
+    expect(handleStop).toHaveBeenCalledWith('2', { cleanup: true });
   });
 
   it('calls handleCleanup for cleanup command', async () => {

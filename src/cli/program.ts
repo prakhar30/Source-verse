@@ -42,22 +42,23 @@ export function createProgram(): Command {
   program
     .command('list')
     .description('List all active sessions with their status')
-    .action(() => {
-      handleList();
+    .action(async () => {
+      await handleList();
     });
 
   program
     .command('switch <id>')
     .description('Switch the terminal view to a specific session')
-    .action((id: string) => {
-      handleSwitch(id);
+    .action(async (id: string) => {
+      await handleSwitch(id);
     });
 
   program
     .command('stop <id>')
     .description('Stop a session and optionally clean up its repo copy')
-    .action((id: string) => {
-      handleStop(id);
+    .option('--cleanup', 'Remove the worktree after stopping')
+    .action(async (id: string, options: { cleanup?: boolean }) => {
+      await handleStop(id, options);
     });
 
   program
@@ -70,8 +71,8 @@ export function createProgram(): Command {
   program
     .command('status')
     .description('Show a summary of all sessions and their states')
-    .action(() => {
-      handleStatus();
+    .action(async () => {
+      await handleStatus();
     });
 
   return program;
