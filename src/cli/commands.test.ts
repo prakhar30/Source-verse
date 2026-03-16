@@ -79,6 +79,7 @@ describe('handleNew', () => {
       gitManager: mockGitManager as never,
       sessionManager: mockSessionManager as never,
       ptySpawner: mockPtySpawner as never,
+      skipPreflight: true,
     });
   }
 

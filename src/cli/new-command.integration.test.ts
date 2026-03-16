@@ -63,7 +63,7 @@ describe('handleNew integration', () => {
   });
 
   it('creates a worktree and branch for a new task', async () => {
-    await handleNew('fix the login bug', repoDir, { ptySpawner: createMockPtySpawner() });
+    await handleNew('fix the login bug', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
 
     const worktreePath = join(repoDir, '..', 'my-app-sv-1');
     expect(existsSync(worktreePath)).toBe(true);
@@ -74,7 +74,7 @@ describe('handleNew integration', () => {
   });
 
   it('prints success output with worktree path and branch name', async () => {
-    await handleNew('add user auth', repoDir, { ptySpawner: createMockPtySpawner() });
+    await handleNew('add user auth', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
 
     const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Created worktree:');
@@ -83,8 +83,8 @@ describe('handleNew integration', () => {
   });
 
   it('increments session id for subsequent tasks', async () => {
-    await handleNew('first task', repoDir, { ptySpawner: createMockPtySpawner() });
-    await handleNew('second task', repoDir, { ptySpawner: createMockPtySpawner() });
+    await handleNew('first task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('second task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
 
     const worktree1 = join(repoDir, '..', 'my-app-sv-1');
     const worktree2 = join(repoDir, '..', 'my-app-sv-2');
@@ -93,15 +93,15 @@ describe('handleNew integration', () => {
   });
 
   it('throws when branch name already exists', async () => {
-    await handleNew('duplicate task', repoDir, { ptySpawner: createMockPtySpawner() });
+    await handleNew('duplicate task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
 
-    await expect(handleNew('duplicate task', repoDir, { ptySpawner: createMockPtySpawner() })).rejects.toThrow(
+    await expect(handleNew('duplicate task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true })).rejects.toThrow(
       'Branch "sv/duplicate-task" already exists',
     );
   });
 
   it('worktree is checked out on the correct branch', async () => {
-    await handleNew('my feature', repoDir, { ptySpawner: createMockPtySpawner() });
+    await handleNew('my feature', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
 
     const worktreePath = join(repoDir, '..', 'my-app-sv-1');
     const branch = await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath);
@@ -109,7 +109,7 @@ describe('handleNew integration', () => {
   });
 
   it('worktree branch is based on latest origin/main', async () => {
-    await handleNew('based on main', repoDir, { ptySpawner: createMockPtySpawner() });
+    await handleNew('based on main', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
 
     const mainCommit = await git(['rev-parse', 'origin/main'], repoDir);
     const worktreeBase = await git(['merge-base', 'sv/based-on-main', 'origin/main'], repoDir);

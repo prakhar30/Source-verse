@@ -5,6 +5,7 @@ import { slugifyTaskName } from '../git/slugify.js';
 import { SessionManager } from '../session/manager.js';
 import { PtySpawner } from '../pty/spawner.js';
 import type { Session, SessionStatus } from '../session/types.js';
+import { runPreflight } from '../preflight/checks.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -47,8 +48,23 @@ export async function handleNew(
     gitManager?: GitManager;
     sessionManager?: SessionManager;
     ptySpawner?: PtySpawner;
+    skipPreflight?: boolean;
   } = {},
 ): Promise<void> {
+  if (!deps.skipPreflight) {
+    const preflight = await runPreflight(repoPath);
+    if (!preflight.ok) {
+      for (const error of preflight.errors) {
+        console.error(`  Error: ${error.message}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    for (const warning of preflight.warnings) {
+      console.log(`  ⚠ ${warning}`);
+    }
+  }
+
   const gitManager = deps.gitManager ?? new GitManager(repoPath);
   const sessionManager = deps.sessionManager ?? new SessionManager();
   const ptySpawner = deps.ptySpawner ?? new PtySpawner();
@@ -407,6 +423,28 @@ async function getDirectorySize(dirPath: string): Promise<string> {
   }
 }
 
+async function getDirectorySizeBytes(dirPath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync('du', ['-sb', dirPath]);
+    const bytes = Number(stdout.split('\t')[0]);
+    return Number.isFinite(bytes) ? bytes : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return 'N/A';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(1)}${units[unitIndex]!}`;
+}
+
 export async function handleStatus(
   deps: {
     sessionManager?: SessionManager;
@@ -444,9 +482,16 @@ export async function handleStatus(
 
   if (activeSessions.length > 0) {
     console.log('  Worktree disk usage:');
+    let totalBytes = 0;
     for (const session of activeSessions) {
       const size = await getDirectorySize(session.worktreePath);
+      const bytes = await getDirectorySizeBytes(session.worktreePath);
+      totalBytes += bytes;
       console.log(`    ${session.id.slice(0, 8)} (${session.branchName}): ${size}`);
+    }
+    if (activeSessions.length > 1) {
+      console.log(`    ${'─'.repeat(20)}`);
+      console.log(`    Total: ${formatBytes(totalBytes)}`);
     }
     console.log('');
   }
