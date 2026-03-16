@@ -72,6 +72,11 @@ export class GitManager {
     return this.parsePorcelainWorktrees(output);
   }
 
+  async fetchDefaultBranch(): Promise<void> {
+    const defaultBranch = await this.getDefaultBranch();
+    await execGit(['fetch', 'origin', defaultBranch], this.repoPath);
+  }
+
   async isBranchMerged(branchName: string): Promise<boolean> {
     const defaultBranch = await this.getDefaultBranch();
     const output = await execGit(['branch', '--merged', defaultBranch], this.repoPath);
