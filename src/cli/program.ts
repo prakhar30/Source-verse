@@ -12,6 +12,7 @@ import { startDashboard } from '../tui/dashboard.js';
 import { SessionManager } from '../session/manager.js';
 import { GitManager } from '../git/manager.js';
 import { PtySpawner } from '../pty/spawner.js';
+import { loadConfig } from '../config/loader.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json') as { version: string };
@@ -25,11 +26,13 @@ export function createProgram(): Command {
     .version(version, '-V, --version')
     .action(async () => {
       const repoPath = process.cwd();
+      const config = await loadConfig();
       await startDashboard({
         sessionManager: new SessionManager(),
         gitManager: new GitManager(repoPath),
         ptySpawner: new PtySpawner(),
         repoPath,
+        mergeDetectionConfig: config.mergeDetection,
       });
     });
 
