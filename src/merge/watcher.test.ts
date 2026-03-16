@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MergeWatcher } from './watcher.js';
-import type { MergeCallback, MergeEvent } from './watcher.js';
+import type { MergeCallback } from './watcher.js';
 import type { SessionManager } from '../session/manager.js';
 import type { GitManager } from '../git/manager.js';
 import type { Session } from '../session/types.js';
