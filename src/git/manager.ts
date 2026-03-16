@@ -54,6 +54,18 @@ export class GitManager {
     const parentDir = dirname(this.repoPath);
     const worktreePath = resolve(parentDir, `${repoName}-sv-${sessionId}`);
 
+    // NFR-7 safety: never allow deletion of the original repository
+    if (resolve(worktreePath) === resolve(this.repoPath)) {
+      throw new Error('Refusing to remove the original repository. This is a safety guard (NFR-7).');
+    }
+
+    const svPattern = `${repoName}-sv-`;
+    if (!basename(worktreePath).startsWith(svPattern)) {
+      throw new Error(
+        `Refusing to remove path that does not match source-verse naming convention: ${worktreePath}`,
+      );
+    }
+
     await execGit(['worktree', 'remove', '--force', worktreePath], this.repoPath);
 
     const branchName = await this.findBranchForWorktree(worktreePath);
