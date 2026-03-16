@@ -16,6 +16,7 @@ const STATUS_MAP: Record<SessionStatus, StatusIndicator> = {
   waiting: { symbol: '◐', color: style.fg.yellow, label: 'Waiting' },
   created: { symbol: '○', color: style.fg.gray, label: 'Idle' },
   done: { symbol: '✓', color: style.fg.cyan, label: 'Done' },
+  error: { symbol: '✗', color: style.fg.red, label: 'Error' },
   merged: { symbol: '✓', color: style.fg.magenta, label: 'Merged' },
   cleaned_up: { symbol: '✕', color: style.fg.gray, label: 'Cleaned' },
 };
