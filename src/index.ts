@@ -30,3 +30,5 @@ export { getStatusIndicator, formatStatus } from './tui/index.js';
 export type { StatusIndicator } from './tui/index.js';
 export { parseKeyInput } from './tui/index.js';
 export type { KeyAction, KeyEvent } from './tui/index.js';
+export { runPreflight, isCommandInstalled, checkDiskSpace, getAvailableDiskSpaceBytes } from './preflight/checks.js';
+export type { PreflightResult, PreflightError } from './preflight/checks.js';

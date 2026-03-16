@@ -195,7 +195,7 @@ describe('runPreflight', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns ok when all checks pass', async () => {
-    setupExecFile((cmd, args) => {
+    setupExecFile((cmd, _args) => {
       if (cmd === 'which') return { stdout: '/usr/bin/git' };
       if (cmd === 'git') return { stdout: 'origin\n' };
       if (cmd === 'df') return { stdout: '     Avail\n5368709120\n' };

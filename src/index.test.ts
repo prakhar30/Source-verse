@@ -9,6 +9,10 @@ import {
   slugifyTaskName,
   SessionManager,
   PtySpawner,
+  runPreflight,
+  isCommandInstalled,
+  checkDiskSpace,
+  getAvailableDiskSpaceBytes,
 } from './index.js';
 
 describe('public API exports', () => {
@@ -46,5 +50,21 @@ describe('public API exports', () => {
 
   it('exports PtySpawner', () => {
     expect(typeof PtySpawner).toBe('function');
+  });
+
+  it('exports runPreflight', () => {
+    expect(typeof runPreflight).toBe('function');
+  });
+
+  it('exports isCommandInstalled', () => {
+    expect(typeof isCommandInstalled).toBe('function');
+  });
+
+  it('exports checkDiskSpace', () => {
+    expect(typeof checkDiskSpace).toBe('function');
+  });
+
+  it('exports getAvailableDiskSpaceBytes', () => {
+    expect(typeof getAvailableDiskSpaceBytes).toBe('function');
   });
 });
