@@ -10,7 +10,9 @@ import type { PtyHandle } from '../pty/types.js';
 import type { SessionManager } from '../session/manager.js';
 import type { GitManager } from '../git/manager.js';
 import type { PtySpawner } from '../pty/spawner.js';
+import type { MergeDetectionConfig } from '../config/types.js';
 import { slugifyTaskName } from '../git/slugify.js';
+import { MergeWatcher } from '../merge/watcher.js';
 import { computeLayout } from './layout.js';
 import { cursor, screen, writeRaw, style } from './renderer.js';
 import { parseKeyInput, enableRawMode, disableRawMode } from './input.js';
@@ -27,6 +29,7 @@ export interface DashboardDeps {
   gitManager: GitManager;
   ptySpawner: PtySpawner;
   repoPath: string;
+  mergeDetectionConfig?: MergeDetectionConfig;
 }
 
 export interface DashboardState {
@@ -316,7 +319,24 @@ export async function startDashboard(deps: DashboardDeps): Promise<void> {
     }
   }, 2000);
 
+  const mergeWatcher = new MergeWatcher(
+    deps.sessionManager,
+    deps.gitManager,
+    async (event) => {
+      const label = event.cleanedUp ? 'merged and cleaned up' : 'merged';
+      appendOutput(
+        event.session.id,
+        `\n[Branch "${event.session.branchName}" was ${label}]`,
+      );
+      state = await refreshSessions(state, deps);
+      render();
+    },
+    deps.mergeDetectionConfig,
+  );
+  mergeWatcher.start();
+
   const cleanupAndExit = () => {
+    mergeWatcher.stop();
     clearInterval(pollInterval);
     process.stdin.removeListener('data', onData);
     process.stdout.removeListener('resize', onResize);

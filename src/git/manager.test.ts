@@ -230,6 +230,21 @@ describe('GitManager', () => {
     });
   });
 
+  describe('fetchDefaultBranch', () => {
+    it('fetches the default branch from origin', async () => {
+      mockExecGit
+        .mockResolvedValueOnce('  main\n') // getDefaultBranch
+        .mockResolvedValueOnce(''); // fetch origin main
+
+      await manager.fetchDefaultBranch();
+
+      expect(mockExecGit).toHaveBeenCalledWith(
+        ['fetch', 'origin', 'main'],
+        '/home/user/projects/my-app',
+      );
+    });
+  });
+
   describe('isBranchMerged', () => {
     it('returns true when branch is in merged list', async () => {
       mockExecGit
