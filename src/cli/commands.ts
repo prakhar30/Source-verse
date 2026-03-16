@@ -104,6 +104,7 @@ const STATUS_COLORS: Record<SessionStatus, string> = {
   running: '\x1b[32m',
   waiting: '\x1b[33m',
   done: '\x1b[37m',
+  error: '\x1b[31m',
   merged: '\x1b[37m',
   cleaned_up: '\x1b[37m',
 };
