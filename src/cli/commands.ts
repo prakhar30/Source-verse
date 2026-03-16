@@ -496,3 +496,62 @@ export async function handleStatus(
     console.log('');
   }
 }
+
+const RESTARTABLE_STATUSES: ReadonlySet<SessionStatus> = new Set(['error', 'done', 'created']);
+
+export async function handleRestart(
+  sessionId: string,
+  deps: {
+    sessionManager?: SessionManager;
+    ptySpawner?: PtySpawner;
+  } = {},
+): Promise<void> {
+  const sessionManager = deps.sessionManager ?? new SessionManager();
+  const ptySpawner = deps.ptySpawner ?? new PtySpawner();
+
+  const session = await sessionManager.getSession(sessionId);
+
+  if (!session) {
+    console.error(`  Error: Session not found: ${sessionId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!RESTARTABLE_STATUSES.has(session.status)) {
+    console.error(
+      `  Error: Session ${sessionId.slice(0, 8)} cannot be restarted (status: ${session.status})`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const claudeAvailable = await ptySpawner.isCommandAvailable('claude');
+
+  if (!claudeAvailable) {
+    console.error('  Error: Claude Code not found on PATH.');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`  Restarting session ${session.id.slice(0, 8)} (${session.branchName})...`);
+  console.log('');
+
+  const handle = ptySpawner.spawnClaude(session.worktreePath, '--resume');
+
+  await sessionManager.updatePid(session.id, handle.pid);
+  await sessionManager.updateStatus(session.id, 'running');
+
+  attachTerminal(handle);
+
+  await new Promise<void>((resolve) => {
+    handle.onExit(async (exitCode) => {
+      detachTerminal();
+      await sessionManager.updatePid(session.id, null);
+      await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'error');
+      console.log('');
+      console.log(`  Claude Code exited (code ${exitCode})`);
+      console.log('');
+      resolve();
+    });
+  });
+}
