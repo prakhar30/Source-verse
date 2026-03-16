@@ -264,4 +264,42 @@ describe('GitManager', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('hasUnpushedCommits', () => {
+    it('returns true when there are unpushed commits', async () => {
+      mockExecGit.mockResolvedValueOnce('abc1234 some commit\n');
+
+      const result = await manager.hasUnpushedCommits('sv/fix-login');
+      expect(result).toBe(true);
+      expect(mockExecGit).toHaveBeenCalledWith(
+        ['log', 'origin/sv/fix-login..sv/fix-login', '--oneline'],
+        '/home/user/projects/my-app',
+      );
+    });
+
+    it('returns false when all commits are pushed', async () => {
+      mockExecGit.mockResolvedValueOnce('');
+
+      const result = await manager.hasUnpushedCommits('sv/fix-login');
+      expect(result).toBe(false);
+    });
+
+    it('returns true when remote branch does not exist but local has commits', async () => {
+      mockExecGit
+        .mockRejectedValueOnce(new Error('unknown revision')) // origin/branch not found
+        .mockResolvedValueOnce('abc1234 initial\n'); // local branch has commits
+
+      const result = await manager.hasUnpushedCommits('sv/new-branch');
+      expect(result).toBe(true);
+    });
+
+    it('returns false when branch does not exist at all', async () => {
+      mockExecGit
+        .mockRejectedValueOnce(new Error('unknown revision'))
+        .mockRejectedValueOnce(new Error('unknown revision'));
+
+      const result = await manager.hasUnpushedCommits('sv/nonexistent');
+      expect(result).toBe(false);
+    });
+  });
 });

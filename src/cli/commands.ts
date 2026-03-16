@@ -297,7 +297,11 @@ export async function handleStop(
 
   if (!shouldCleanup && process.stdin.isTTY) {
     const isMerged = await gitManager.isBranchMerged(session.branchName).catch(() => false);
+    const hasUnpushed = await gitManager.hasUnpushedCommits(session.branchName).catch(() => false);
 
+    if (hasUnpushed) {
+      console.log(`  ⚠ Branch ${session.branchName} has unpushed commits.`);
+    }
     if (!isMerged) {
       console.log(`  ⚠ Branch ${session.branchName} has unmerged changes.`);
     }

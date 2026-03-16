@@ -88,6 +88,24 @@ export class GitManager {
     return mergedBranches.includes(branchName);
   }
 
+  async hasUnpushedCommits(branchName: string): Promise<boolean> {
+    try {
+      const output = await execGit(
+        ['log', `origin/${branchName}..${branchName}`, '--oneline'],
+        this.repoPath,
+      );
+      return output.trim().length > 0;
+    } catch {
+      // If the remote branch doesn't exist, all local commits are unpushed
+      try {
+        const output = await execGit(['log', branchName, '--oneline', '-1'], this.repoPath);
+        return output.trim().length > 0;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   private async assertBranchDoesNotExist(branchName: string): Promise<void> {
     const output = await execGit(['branch', '--list', branchName], this.repoPath);
     if (output.trim()) {
