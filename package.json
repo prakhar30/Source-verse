@@ -17,15 +17,33 @@
     "format": "prettier --write \"src/**/*.ts\" \"bin/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"bin/**/*.ts\""
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prakhar30/source-verse.git"
+  },
   "keywords": [
     "claude",
+    "claude-code",
     "ai",
     "cli",
     "parallel",
-    "terminal"
+    "terminal",
+    "tui",
+    "git",
+    "worktree",
+    "developer-tools"
   ],
   "author": "Prakhar Tripathi",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "LICENSE",
+    "README.md"
+  ],
   "devDependencies": {
     "@types/node": "22.13.9",
     "@typescript-eslint/eslint-plugin": "8.26.1",
