@@ -7,6 +7,7 @@ import {
   handleStop,
   handleCleanup,
   handleStatus,
+  handleRestart,
 } from './commands.js';
 import { startDashboard } from '../tui/dashboard.js';
 import { SessionManager } from '../session/manager.js';
@@ -77,6 +78,13 @@ export function createProgram(): Command {
     .description('Show a summary of all sessions and their states')
     .action(async () => {
       await handleStatus();
+    });
+
+  program
+    .command('restart <id>')
+    .description('Restart a crashed or completed session')
+    .action(async (id: string) => {
+      await handleRestart(id);
     });
 
   return program;

@@ -5,6 +5,7 @@ import { slugifyTaskName } from '../git/slugify.js';
 import { SessionManager } from '../session/manager.js';
 import { PtySpawner } from '../pty/spawner.js';
 import type { Session, SessionStatus } from '../session/types.js';
+import { runPreflight } from '../preflight/checks.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -47,8 +48,23 @@ export async function handleNew(
     gitManager?: GitManager;
     sessionManager?: SessionManager;
     ptySpawner?: PtySpawner;
+    skipPreflight?: boolean;
   } = {},
 ): Promise<void> {
+  if (!deps.skipPreflight) {
+    const preflight = await runPreflight(repoPath);
+    if (!preflight.ok) {
+      for (const error of preflight.errors) {
+        console.error(`  Error: ${error.message}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    for (const warning of preflight.warnings) {
+      console.log(`  ⚠ ${warning}`);
+    }
+  }
+
   const gitManager = deps.gitManager ?? new GitManager(repoPath);
   const sessionManager = deps.sessionManager ?? new SessionManager();
   const ptySpawner = deps.ptySpawner ?? new PtySpawner();
@@ -281,7 +297,11 @@ export async function handleStop(
 
   if (!shouldCleanup && process.stdin.isTTY) {
     const isMerged = await gitManager.isBranchMerged(session.branchName).catch(() => false);
+    const hasUnpushed = await gitManager.hasUnpushedCommits(session.branchName).catch(() => false);
 
+    if (hasUnpushed) {
+      console.log(`  ⚠ Branch ${session.branchName} has unpushed commits.`);
+    }
     if (!isMerged) {
       console.log(`  ⚠ Branch ${session.branchName} has unmerged changes.`);
     }
@@ -407,6 +427,28 @@ async function getDirectorySize(dirPath: string): Promise<string> {
   }
 }
 
+async function getDirectorySizeBytes(dirPath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync('du', ['-sb', dirPath]);
+    const bytes = Number(stdout.split('\t')[0]);
+    return Number.isFinite(bytes) ? bytes : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return 'N/A';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(1)}${units[unitIndex]!}`;
+}
+
 export async function handleStatus(
   deps: {
     sessionManager?: SessionManager;
@@ -444,10 +486,76 @@ export async function handleStatus(
 
   if (activeSessions.length > 0) {
     console.log('  Worktree disk usage:');
+    let totalBytes = 0;
     for (const session of activeSessions) {
       const size = await getDirectorySize(session.worktreePath);
+      const bytes = await getDirectorySizeBytes(session.worktreePath);
+      totalBytes += bytes;
       console.log(`    ${session.id.slice(0, 8)} (${session.branchName}): ${size}`);
+    }
+    if (activeSessions.length > 1) {
+      console.log(`    ${'─'.repeat(20)}`);
+      console.log(`    Total: ${formatBytes(totalBytes)}`);
     }
     console.log('');
   }
+}
+
+const RESTARTABLE_STATUSES: ReadonlySet<SessionStatus> = new Set(['error', 'done', 'created']);
+
+export async function handleRestart(
+  sessionId: string,
+  deps: {
+    sessionManager?: SessionManager;
+    ptySpawner?: PtySpawner;
+  } = {},
+): Promise<void> {
+  const sessionManager = deps.sessionManager ?? new SessionManager();
+  const ptySpawner = deps.ptySpawner ?? new PtySpawner();
+
+  const session = await sessionManager.getSession(sessionId);
+
+  if (!session) {
+    console.error(`  Error: Session not found: ${sessionId}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!RESTARTABLE_STATUSES.has(session.status)) {
+    console.error(
+      `  Error: Session ${sessionId.slice(0, 8)} cannot be restarted (status: ${session.status})`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const claudeAvailable = await ptySpawner.isCommandAvailable('claude');
+
+  if (!claudeAvailable) {
+    console.error('  Error: Claude Code not found on PATH.');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`  Restarting session ${session.id.slice(0, 8)} (${session.branchName})...`);
+  console.log('');
+
+  const handle = ptySpawner.spawnClaude(session.worktreePath, '--resume');
+
+  await sessionManager.updatePid(session.id, handle.pid);
+  await sessionManager.updateStatus(session.id, 'running');
+
+  attachTerminal(handle);
+
+  await new Promise<void>((resolve) => {
+    handle.onExit(async (exitCode) => {
+      detachTerminal();
+      await sessionManager.updatePid(session.id, null);
+      await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'error');
+      console.log('');
+      console.log(`  Claude Code exited (code ${exitCode})`);
+      console.log('');
+      resolve();
+    });
+  });
 }

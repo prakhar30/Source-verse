@@ -11,6 +11,7 @@ import {
   handleStop,
   handleCleanup,
   handleStatus,
+  handleRestart,
 } from './commands.js';
 import { slugifyTaskName } from '../git/slugify.js';
 
@@ -79,6 +80,7 @@ describe('handleNew', () => {
       gitManager: mockGitManager as never,
       sessionManager: mockSessionManager as never,
       ptySpawner: mockPtySpawner as never,
+      skipPreflight: true,
     });
   }
 
@@ -868,5 +870,136 @@ describe('handleStatus', () => {
 
     const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).not.toContain('Worktree disk usage');
+  });
+});
+
+describe('handleRestart', () => {
+  let mockSessionManager: ReturnType<typeof createMockSessionManager>;
+  let mockPtySpawner: ReturnType<typeof createMockPtySpawner>;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessionManager = createMockSessionManager();
+    mockPtySpawner = createMockPtySpawner();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    process.exitCode = undefined;
+  });
+
+  it('errors when session not found', async () => {
+    mockSessionManager.getSession.mockResolvedValue(null);
+
+    await handleRestart('nonexistent', {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    const output = consoleErrorSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Session not found');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('errors when session is running', async () => {
+    mockSessionManager.getSession.mockResolvedValue(createTestSession({ status: 'running' }));
+
+    await handleRestart('abcdef12', {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    const output = consoleErrorSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('cannot be restarted');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('errors when session is cleaned_up', async () => {
+    mockSessionManager.getSession.mockResolvedValue(createTestSession({ status: 'cleaned_up' }));
+
+    await handleRestart('abcdef12', {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('errors when claude is not available', async () => {
+    mockSessionManager.getSession.mockResolvedValue(createTestSession({ status: 'error' }));
+    mockPtySpawner.isCommandAvailable.mockResolvedValue(false);
+
+    await handleRestart('abcdef12', {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    const output = consoleErrorSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Claude Code not found');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('restarts an error session successfully', async () => {
+    const session = createTestSession({ status: 'error' });
+    mockSessionManager.getSession.mockResolvedValue(session);
+    mockPtySpawner.isCommandAvailable.mockResolvedValue(true);
+    mockSessionManager.updatePid.mockResolvedValue({});
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    const mockHandle = createMockPtyHandle();
+    mockHandle.onExit.mockImplementation((cb: (code: number, signal?: number) => void) => {
+      cb(0);
+    });
+    mockPtySpawner.spawnClaude.mockReturnValue(mockHandle);
+
+    await handleRestart(session.id, {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    expect(mockPtySpawner.spawnClaude).toHaveBeenCalledWith(session.worktreePath, '--resume');
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'done');
+  });
+
+  it('restarts a done session successfully', async () => {
+    const session = createTestSession({ status: 'done' });
+    mockSessionManager.getSession.mockResolvedValue(session);
+    mockPtySpawner.isCommandAvailable.mockResolvedValue(true);
+    mockSessionManager.updatePid.mockResolvedValue({});
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    const mockHandle = createMockPtyHandle();
+    mockHandle.onExit.mockImplementation((cb: (code: number, signal?: number) => void) => {
+      cb(0);
+    });
+    mockPtySpawner.spawnClaude.mockReturnValue(mockHandle);
+
+    await handleRestart(session.id, {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    expect(mockPtySpawner.spawnClaude).toHaveBeenCalled();
+  });
+
+  it('sets status to error on non-zero exit', async () => {
+    const session = createTestSession({ status: 'error' });
+    mockSessionManager.getSession.mockResolvedValue(session);
+    mockPtySpawner.isCommandAvailable.mockResolvedValue(true);
+    mockSessionManager.updatePid.mockResolvedValue({});
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    const mockHandle = createMockPtyHandle();
+    mockHandle.onExit.mockImplementation((cb: (code: number, signal?: number) => void) => {
+      cb(1);
+    });
+    mockPtySpawner.spawnClaude.mockReturnValue(mockHandle);
+
+    await handleRestart(session.id, {
+      sessionManager: mockSessionManager as never,
+      ptySpawner: mockPtySpawner as never,
+    });
+
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'error');
   });
 });
