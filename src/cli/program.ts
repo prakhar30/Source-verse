@@ -16,7 +16,7 @@ import { PtySpawner } from '../pty/spawner.js';
 import { loadConfig } from '../config/loader.js';
 
 const require = createRequire(import.meta.url);
-const { version } = require('../../package.json') as { version: string };
+const { version } = require('../../../package.json') as { version: string };
 
 export function createProgram(): Command {
   const program = new Command();

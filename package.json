@@ -4,12 +4,12 @@
   "description": "Run multiple Claude Code sessions in parallel from a single terminal",
   "type": "module",
   "bin": {
-    "source-verse": "./bin/source-verse.js"
+    "source-verse": "./dist/bin/source-verse.js"
   },
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx bin/source-verse.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint \"src/**/*.ts\" \"bin/**/*.ts\"",
