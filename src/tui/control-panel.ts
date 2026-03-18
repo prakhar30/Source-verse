@@ -47,9 +47,10 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   let focusedIndex = 0;
   let prompt: PromptState | null = null;
   let mergeWatcher: MergeWatcher | null = null;
-  const tagline = Math.random() < 0.5
-    ? 'Parallel universes, one terminal.'
-    : "Don't clone repos. Clone yourself.";
+  const tagline =
+    Math.random() < 0.5
+      ? 'Parallel universes, one terminal.'
+      : "Don't clone repos. Clone yourself.";
 
   // ── Helpers ──────────────────────────────────────────────────────
 
