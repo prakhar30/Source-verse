@@ -13,13 +13,18 @@ export class GitCommandError extends Error {
 
 export function execGit(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }, (error, stdout, stderr) => {
-      if (error) {
-        const exitCode = typeof error.code === 'number' ? error.code : null;
-        reject(new GitCommandError(args, exitCode, stderr));
-        return;
-      }
-      resolve(stdout);
-    });
+    execFile(
+      'git',
+      args,
+      { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } },
+      (error, stdout, stderr) => {
+        if (error) {
+          const exitCode = typeof error.code === 'number' ? error.code : null;
+          reject(new GitCommandError(args, exitCode, stderr));
+          return;
+        }
+        resolve(stdout);
+      },
+    );
   });
 }
