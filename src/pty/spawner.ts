@@ -103,6 +103,17 @@ export class TmuxSpawner {
     }
   }
 
+  /** Send a line of text to a window within sv-main. */
+  async sendLineToWindow(windowName: string, text: string): Promise<void> {
+    await execFileAsync('tmux', [
+      'send-keys',
+      '-t',
+      `${MAIN_SESSION}:${windowName}`,
+      text,
+      'Enter',
+    ]);
+  }
+
   /** List all windows in sv-main. */
   async listWindows(): Promise<WindowInfo[]> {
     try {
@@ -135,13 +146,15 @@ export class TmuxSpawner {
     windowName: string,
     cwd: string,
     taskDescription: string,
+    options?: { raw?: boolean },
   ): Promise<void> {
     // Kill stale window with same name if it exists
     const exists = await this.hasWindow(windowName);
     if (exists) {
       await this.killWindow(windowName);
     }
-    await this.createWindow(windowName, cwd, `claude ${JSON.stringify(taskDescription)}`);
+    const arg = options?.raw ? taskDescription : JSON.stringify(taskDescription);
+    await this.createWindow(windowName, cwd, `claude ${arg}`);
   }
 
   // ── Environment detection ────────────────────────────────────────

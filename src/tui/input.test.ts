@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { parseKeyInput } from './input.js';
 
 describe('parseKeyInput', () => {
-  it('parses q as quit', () => {
+  it('parses q as suspend_all', () => {
     const event = parseKeyInput(Buffer.from('q'));
-    expect(event).toEqual({ action: 'quit' });
+    expect(event).toEqual({ action: 'suspend_all' });
   });
 
-  it('parses Ctrl+C as quit', () => {
+  it('parses Ctrl+C as suspend_all', () => {
     const event = parseKeyInput(Buffer.from('\x03'));
-    expect(event).toEqual({ action: 'quit' });
+    expect(event).toEqual({ action: 'suspend_all' });
   });
 
   it('parses Tab as next_session', () => {
@@ -42,6 +42,16 @@ describe('parseKeyInput', () => {
       const event = parseKeyInput(Buffer.from(String(i)));
       expect(event).toEqual({ action: 'jump_to_session', sessionNumber: i });
     }
+  });
+
+  it('parses Q as quit', () => {
+    const event = parseKeyInput(Buffer.from('Q'));
+    expect(event).toEqual({ action: 'quit' });
+  });
+
+  it('parses R as resume_all', () => {
+    const event = parseKeyInput(Buffer.from('R'));
+    expect(event).toEqual({ action: 'resume_all' });
   });
 
   it('returns null for unrecognized input', () => {

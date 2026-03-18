@@ -5,6 +5,7 @@ export type SessionStatus =
   | 'done'
   | 'error'
   | 'merged'
+  | 'suspended'
   | 'cleaned_up';
 
 export interface Session {
@@ -15,6 +16,7 @@ export interface Session {
   tmuxSessionName: string;
   status: SessionStatus;
   pid: number | null;
+  claudeSessionId: string | null;
   createdAt: string;
   updatedAt: string;
 }

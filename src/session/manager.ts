@@ -33,6 +33,7 @@ export class SessionManager {
       tmuxSessionName,
       status: 'created',
       pid: null,
+      claudeSessionId: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -82,6 +83,20 @@ export class SessionManager {
     }
 
     session.pid = pid;
+    session.updatedAt = new Date().toISOString();
+    await this.saveSessions(sessions);
+    return session;
+  }
+
+  async updateClaudeSessionId(id: string, claudeSessionId: string | null): Promise<Session> {
+    const sessions = await this.loadSessions();
+    const session = sessions.find((s) => s.id === id);
+
+    if (!session) {
+      throw new Error(`Session not found: ${id}`);
+    }
+
+    session.claudeSessionId = claudeSessionId;
     session.updatedAt = new Date().toISOString();
     await this.saveSessions(sessions);
     return session;
