@@ -1,6 +1,6 @@
 {
   "name": "source-verse",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Run multiple Claude Code sessions in parallel from a single terminal",
   "type": "module",
   "bin": {
