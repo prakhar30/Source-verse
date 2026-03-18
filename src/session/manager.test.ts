@@ -19,12 +19,15 @@ describe('SessionManager', () => {
 
   describe('createSession', () => {
     it('creates a session with all required fields', async () => {
-      const session = await manager.createSession('fix login bug', '/tmp/worktree', 'sv/fix-login', 'sv-1');
+      const session = await manager.createSession(
+        'fix login bug',
+        '/tmp/worktree',
+        'sv/fix-login',
+        'sv-1',
+      );
 
       expect(session.id).toBeDefined();
-      expect(session.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-      );
+      expect(session.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
       expect(session.taskDescription).toBe('fix login bug');
       expect(session.worktreePath).toBe('/tmp/worktree');
       expect(session.branchName).toBe('sv/fix-login');

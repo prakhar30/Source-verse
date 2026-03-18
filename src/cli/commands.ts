@@ -504,9 +504,7 @@ export async function handleStatus(
 
   console.log('');
 
-  const activeSessions = sessions.filter(
-    (s) => s.status !== 'cleaned_up' && s.status !== 'merged',
-  );
+  const activeSessions = sessions.filter((s) => s.status !== 'cleaned_up' && s.status !== 'merged');
 
   if (activeSessions.length > 0) {
     console.log('  Worktree disk usage:');

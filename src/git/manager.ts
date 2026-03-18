@@ -56,7 +56,9 @@ export class GitManager {
 
     // NFR-7 safety: never allow deletion of the original repository
     if (resolve(worktreePath) === resolve(this.repoPath)) {
-      throw new Error('Refusing to remove the original repository. This is a safety guard (NFR-7).');
+      throw new Error(
+        'Refusing to remove the original repository. This is a safety guard (NFR-7).',
+      );
     }
 
     const svPattern = `${repoName}-sv-`;

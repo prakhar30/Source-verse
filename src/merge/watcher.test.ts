@@ -71,12 +71,10 @@ describe('MergeWatcher', () => {
       vi.mocked(deps.sessionManager.listSessions).mockResolvedValue([session]);
       vi.mocked(deps.gitManager.isBranchMerged).mockResolvedValue(true);
 
-      const watcher = new MergeWatcher(
-        deps.sessionManager,
-        deps.gitManager,
-        deps.onMergeDetected,
-        { ...FAST_CONFIG, autoCleanup: false },
-      );
+      const watcher = new MergeWatcher(deps.sessionManager, deps.gitManager, deps.onMergeDetected, {
+        ...FAST_CONFIG,
+        autoCleanup: false,
+      });
 
       const events = await watcher.checkForMerges();
 
@@ -113,12 +111,10 @@ describe('MergeWatcher', () => {
       vi.mocked(deps.sessionManager.listSessions).mockResolvedValue([session]);
       vi.mocked(deps.gitManager.isBranchMerged).mockResolvedValue(true);
 
-      const watcher = new MergeWatcher(
-        deps.sessionManager,
-        deps.gitManager,
-        deps.onMergeDetected,
-        { ...FAST_CONFIG, autoCleanup: false },
-      );
+      const watcher = new MergeWatcher(deps.sessionManager, deps.gitManager, deps.onMergeDetected, {
+        ...FAST_CONFIG,
+        autoCleanup: false,
+      });
 
       const events = await watcher.checkForMerges();
 
@@ -203,12 +199,10 @@ describe('MergeWatcher', () => {
       vi.mocked(deps.sessionManager.listSessions).mockResolvedValue([session1, session2]);
       vi.mocked(deps.gitManager.isBranchMerged).mockResolvedValue(true);
 
-      const watcher = new MergeWatcher(
-        deps.sessionManager,
-        deps.gitManager,
-        deps.onMergeDetected,
-        { ...FAST_CONFIG, autoCleanup: false },
-      );
+      const watcher = new MergeWatcher(deps.sessionManager, deps.gitManager, deps.onMergeDetected, {
+        ...FAST_CONFIG,
+        autoCleanup: false,
+      });
 
       await watcher.checkForMerges();
 
@@ -243,12 +237,10 @@ describe('MergeWatcher', () => {
       vi.mocked(deps.sessionManager.listSessions).mockResolvedValue(sessions);
       vi.mocked(deps.gitManager.isBranchMerged).mockResolvedValue(true);
 
-      const watcher = new MergeWatcher(
-        deps.sessionManager,
-        deps.gitManager,
-        deps.onMergeDetected,
-        { ...FAST_CONFIG, autoCleanup: false },
-      );
+      const watcher = new MergeWatcher(deps.sessionManager, deps.gitManager, deps.onMergeDetected, {
+        ...FAST_CONFIG,
+        autoCleanup: false,
+      });
 
       const events = await watcher.checkForMerges();
 
