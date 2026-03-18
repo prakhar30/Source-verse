@@ -108,9 +108,26 @@ export async function checkDiskSpace(
   return null;
 }
 
+export async function assertTmuxInstalled(): Promise<PreflightError | null> {
+  const installed = await isCommandInstalled('tmux');
+  if (!installed) {
+    return {
+      check: 'tmux',
+      message: 'tmux is not installed. Install it:\n  brew install tmux   (macOS)\n  apt install tmux    (Debian/Ubuntu)',
+    };
+  }
+  return null;
+}
+
 export async function runPreflight(repoPath: string): Promise<PreflightResult> {
   const errors: PreflightError[] = [];
   const warnings: string[] = [];
+
+  const tmuxError = await assertTmuxInstalled();
+  if (tmuxError) {
+    errors.push(tmuxError);
+    return { ok: false, errors, warnings };
+  }
 
   const gitError = await assertGitInstalled();
   if (gitError) {

@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SessionManager } from './manager.js';
 import { SessionReconciler } from './reconciler.js';
-import type { ProcessChecker, PathChecker } from './reconciler.js';
+import type { TmuxChecker, PathChecker } from './reconciler.js';
 
-function createMockProcessChecker(alivePids: Set<number>): ProcessChecker {
+function createMockTmuxChecker(aliveSessions: Set<string>): TmuxChecker {
   return {
-    isAlive(pid: number): boolean {
-      return alivePids.has(pid);
+    async hasSession(sessionName: string): Promise<boolean> {
+      return aliveSessions.has(sessionName);
     },
   };
 }
@@ -38,7 +38,7 @@ describe('SessionReconciler', () => {
     it('returns empty result when no sessions exist', async () => {
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -50,14 +50,13 @@ describe('SessionReconciler', () => {
       expect(result.orphanedWorktrees).toEqual([]);
     });
 
-    it('reattaches running session with alive PID', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+    it('reattaches running session with alive tmux session', async () => {
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'running');
-      await manager.updatePid(session.id, 1234);
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set([1234])),
+        createMockTmuxChecker(new Set(['sv-1'])),
         createMockPathChecker(new Set()),
       );
 
@@ -68,17 +67,15 @@ describe('SessionReconciler', () => {
 
       const reloaded = await manager.getSession(session.id);
       expect(reloaded?.status).toBe('running');
-      expect(reloaded?.pid).toBe(1234);
     });
 
-    it('marks running session as done when PID is dead', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+    it('marks running session as done when tmux session is dead', async () => {
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'running');
-      await manager.updatePid(session.id, 9999);
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -89,17 +86,15 @@ describe('SessionReconciler', () => {
 
       const reloaded = await manager.getSession(session.id);
       expect(reloaded?.status).toBe('done');
-      expect(reloaded?.pid).toBeNull();
     });
 
-    it('marks waiting session as done when PID is dead', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+    it('marks waiting session as done when tmux session is dead', async () => {
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'waiting');
-      await manager.updatePid(session.id, 5555);
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -111,14 +106,13 @@ describe('SessionReconciler', () => {
       expect(reloaded?.status).toBe('done');
     });
 
-    it('reattaches waiting session with alive PID', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+    it('reattaches waiting session with alive tmux session', async () => {
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'waiting');
-      await manager.updatePid(session.id, 7777);
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set([7777])),
+        createMockTmuxChecker(new Set(['sv-1'])),
         createMockPathChecker(new Set()),
       );
 
@@ -130,13 +124,13 @@ describe('SessionReconciler', () => {
       expect(reloaded?.status).toBe('waiting');
     });
 
-    it('marks active session as error when PID is null', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+    it('marks active session as error when tmuxSessionName is missing', async () => {
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', '');
       await manager.updateStatus(session.id, 'running');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -149,12 +143,12 @@ describe('SessionReconciler', () => {
     });
 
     it('detects orphaned worktree for cleaned_up session', async () => {
-      const session = await manager.createSession('task', '/tmp/wt-orphan', 'sv/task');
+      const session = await manager.createSession('task', '/tmp/wt-orphan', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'cleaned_up');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set(['/tmp/wt-orphan'])),
       );
 
@@ -164,12 +158,12 @@ describe('SessionReconciler', () => {
     });
 
     it('ignores cleaned_up session when worktree does not exist', async () => {
-      const session = await manager.createSession('task', '/tmp/wt-gone', 'sv/task');
+      const session = await manager.createSession('task', '/tmp/wt-gone', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'cleaned_up');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -179,11 +173,11 @@ describe('SessionReconciler', () => {
     });
 
     it('does not modify sessions in created status', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -194,12 +188,12 @@ describe('SessionReconciler', () => {
     });
 
     it('does not modify sessions in done status', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'done');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -210,12 +204,12 @@ describe('SessionReconciler', () => {
     });
 
     it('does not modify sessions in merged status', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(session.id, 'merged');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set()),
+        createMockTmuxChecker(new Set()),
         createMockPathChecker(new Set()),
       );
 
@@ -226,22 +220,20 @@ describe('SessionReconciler', () => {
     });
 
     it('handles mixed sessions correctly', async () => {
-      const running = await manager.createSession('running task', '/tmp/wt1', 'sv/running');
+      const running = await manager.createSession('running task', '/tmp/wt1', 'sv/running', 'sv-1');
       await manager.updateStatus(running.id, 'running');
-      await manager.updatePid(running.id, 1000);
 
-      const dead = await manager.createSession('dead task', '/tmp/wt2', 'sv/dead');
+      const dead = await manager.createSession('dead task', '/tmp/wt2', 'sv/dead', 'sv-2');
       await manager.updateStatus(dead.id, 'running');
-      await manager.updatePid(dead.id, 2000);
 
-      const created = await manager.createSession('new task', '/tmp/wt3', 'sv/new');
+      const created = await manager.createSession('new task', '/tmp/wt3', 'sv/new', 'sv-3');
 
-      const cleanedUp = await manager.createSession('old task', '/tmp/wt4', 'sv/old');
+      const cleanedUp = await manager.createSession('old task', '/tmp/wt4', 'sv/old', 'sv-4');
       await manager.updateStatus(cleanedUp.id, 'cleaned_up');
 
       const reconciler = new SessionReconciler(
         manager,
-        createMockProcessChecker(new Set([1000])),
+        createMockTmuxChecker(new Set(['sv-1'])),
         createMockPathChecker(new Set(['/tmp/wt4'])),
       );
 

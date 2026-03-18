@@ -19,7 +19,7 @@ describe('SessionManager', () => {
 
   describe('createSession', () => {
     it('creates a session with all required fields', async () => {
-      const session = await manager.createSession('fix login bug', '/tmp/worktree', 'sv/fix-login');
+      const session = await manager.createSession('fix login bug', '/tmp/worktree', 'sv/fix-login', 'sv-1');
 
       expect(session.id).toBeDefined();
       expect(session.id).toMatch(
@@ -35,7 +35,7 @@ describe('SessionManager', () => {
     });
 
     it('persists session to disk', async () => {
-      await manager.createSession('task one', '/tmp/wt1', 'sv/task-one');
+      await manager.createSession('task one', '/tmp/wt1', 'sv/task-one', 'sv-1');
 
       const raw = await readFile(join(tempDir, 'sessions.json'), 'utf-8');
       const sessions: Session[] = JSON.parse(raw);
@@ -45,16 +45,16 @@ describe('SessionManager', () => {
     });
 
     it('appends to existing sessions', async () => {
-      await manager.createSession('task one', '/tmp/wt1', 'sv/task-one');
-      await manager.createSession('task two', '/tmp/wt2', 'sv/task-two');
+      await manager.createSession('task one', '/tmp/wt1', 'sv/task-one', 'sv-1');
+      await manager.createSession('task two', '/tmp/wt2', 'sv/task-two', 'sv-2');
 
       const sessions = await manager.listSessions();
       expect(sessions).toHaveLength(2);
     });
 
     it('generates unique IDs for each session', async () => {
-      const first = await manager.createSession('task one', '/tmp/wt1', 'sv/task-one');
-      const second = await manager.createSession('task two', '/tmp/wt2', 'sv/task-two');
+      const first = await manager.createSession('task one', '/tmp/wt1', 'sv/task-one', 'sv-1');
+      const second = await manager.createSession('task two', '/tmp/wt2', 'sv/task-two', 'sv-2');
 
       expect(first.id).not.toBe(second.id);
     });
@@ -62,7 +62,7 @@ describe('SessionManager', () => {
 
   describe('getSession', () => {
     it('returns the session by ID', async () => {
-      const created = await manager.createSession('my task', '/tmp/wt', 'sv/my-task');
+      const created = await manager.createSession('my task', '/tmp/wt', 'sv/my-task', 'sv-1');
       const found = await manager.getSession(created.id);
 
       expect(found).toEqual(created);
@@ -86,11 +86,11 @@ describe('SessionManager', () => {
     });
 
     it('returns sessions sorted by creation time', async () => {
-      const first = await manager.createSession('first', '/tmp/wt1', 'sv/first');
+      const first = await manager.createSession('first', '/tmp/wt1', 'sv/first', 'sv-1');
 
       // Ensure distinct timestamps
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const second = await manager.createSession('second', '/tmp/wt2', 'sv/second');
+      const second = await manager.createSession('second', '/tmp/wt2', 'sv/second', 'sv-2');
 
       const sessions = await manager.listSessions();
 
@@ -102,14 +102,14 @@ describe('SessionManager', () => {
 
   describe('updateStatus', () => {
     it('updates the status of a session', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       const updated = await manager.updateStatus(created.id, 'running');
 
       expect(updated.status).toBe('running');
     });
 
     it('updates the updatedAt timestamp', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
 
       await new Promise((resolve) => setTimeout(resolve, 10));
       const updated = await manager.updateStatus(created.id, 'running');
@@ -120,7 +120,7 @@ describe('SessionManager', () => {
     });
 
     it('persists the status change to disk', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updateStatus(created.id, 'done');
 
       const freshManager = new SessionManager(tempDir);
@@ -136,7 +136,7 @@ describe('SessionManager', () => {
     });
 
     it('supports all valid status transitions', async () => {
-      const session = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const session = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
 
       const statuses = ['running', 'waiting', 'done', 'merged', 'cleaned_up'] as const;
 
@@ -149,14 +149,14 @@ describe('SessionManager', () => {
 
   describe('updatePid', () => {
     it('sets the PID on a session', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       const updated = await manager.updatePid(created.id, 42);
 
       expect(updated.pid).toBe(42);
     });
 
     it('clears the PID when set to null', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updatePid(created.id, 42);
       const cleared = await manager.updatePid(created.id, null);
 
@@ -164,7 +164,7 @@ describe('SessionManager', () => {
     });
 
     it('updates the updatedAt timestamp', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
 
       await new Promise((resolve) => setTimeout(resolve, 10));
       const updated = await manager.updatePid(created.id, 99);
@@ -175,7 +175,7 @@ describe('SessionManager', () => {
     });
 
     it('persists the PID change to disk', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.updatePid(created.id, 555);
 
       const freshManager = new SessionManager(tempDir);
@@ -193,7 +193,7 @@ describe('SessionManager', () => {
 
   describe('removeSession', () => {
     it('removes a session by ID', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.removeSession(created.id);
 
       const found = await manager.getSession(created.id);
@@ -201,7 +201,7 @@ describe('SessionManager', () => {
     });
 
     it('persists the removal to disk', async () => {
-      const created = await manager.createSession('task', '/tmp/wt', 'sv/task');
+      const created = await manager.createSession('task', '/tmp/wt', 'sv/task', 'sv-1');
       await manager.removeSession(created.id);
 
       const freshManager = new SessionManager(tempDir);
@@ -210,8 +210,8 @@ describe('SessionManager', () => {
     });
 
     it('does not affect other sessions', async () => {
-      const first = await manager.createSession('first', '/tmp/wt1', 'sv/first');
-      const second = await manager.createSession('second', '/tmp/wt2', 'sv/second');
+      const first = await manager.createSession('first', '/tmp/wt1', 'sv/first', 'sv-1');
+      const second = await manager.createSession('second', '/tmp/wt2', 'sv/second', 'sv-2');
 
       await manager.removeSession(first.id);
 

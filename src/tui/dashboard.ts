@@ -1,15 +1,14 @@
 /**
  * Main TUI dashboard — composes panels, manages state, handles input.
  *
- * Wired to real SessionManager, GitManager, and PtySpawner
- * for live session management and PTY output streaming.
+ * Uses tmux for session management: output is polled via capture-pane,
+ * input is sent via send-keys, sessions persist independently.
  */
 
 import type { Session } from '../session/types.js';
-import type { PtyHandle } from '../pty/types.js';
 import type { SessionManager } from '../session/manager.js';
 import type { GitManager } from '../git/manager.js';
-import type { PtySpawner } from '../pty/spawner.js';
+import type { TmuxSpawner } from '../pty/spawner.js';
 import type { MergeDetectionConfig } from '../config/types.js';
 import { slugifyTaskName } from '../git/slugify.js';
 import { MergeWatcher } from '../merge/watcher.js';
@@ -27,7 +26,7 @@ import {
 export interface DashboardDeps {
   sessionManager: SessionManager;
   gitManager: GitManager;
-  ptySpawner: PtySpawner;
+  tmuxSpawner: TmuxSpawner;
   repoPath: string;
   mergeDetectionConfig?: MergeDetectionConfig;
 }
@@ -51,10 +50,8 @@ interface PromptMode {
 /** Per-session output lines, keyed by session ID. */
 const outputBuffers = new Map<string, string[]>();
 
-/** Active PTY handles, keyed by session ID. */
-const ptyHandles = new Map<string, PtyHandle>();
-
 const MAX_OUTPUT_LINES = 5000;
+const OUTPUT_POLL_MS = 1000;
 
 export function createInitialState(sessions: Session[]): DashboardState {
   return {
@@ -74,19 +71,11 @@ function getOutputLines(state: DashboardState): string[] {
   return outputBuffers.get(session.id) ?? [];
 }
 
-function appendOutput(sessionId: string, data: string): void {
-  let buffer = outputBuffers.get(sessionId);
-  if (!buffer) {
-    buffer = [];
-    outputBuffers.set(sessionId, buffer);
-  }
-  const lines = data.split('\n');
-  for (const line of lines) {
-    buffer.push(line);
-  }
-  if (buffer.length > MAX_OUTPUT_LINES) {
-    const excess = buffer.length - MAX_OUTPUT_LINES;
-    buffer.splice(0, excess);
+function setOutputBuffer(sessionId: string, lines: string[]): void {
+  if (lines.length > MAX_OUTPUT_LINES) {
+    outputBuffers.set(sessionId, lines.slice(lines.length - MAX_OUTPUT_LINES));
+  } else {
+    outputBuffers.set(sessionId, lines);
   }
 }
 
@@ -164,12 +153,27 @@ async function refreshSessions(
   return next;
 }
 
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+/**
+ * Poll tmux capture-pane for every running session and update output buffers.
+ */
+async function pollOutputs(state: DashboardState, deps: DashboardDeps): Promise<void> {
+  for (const session of state.sessions) {
+    if (
+      (session.status === 'running' || session.status === 'waiting') &&
+      session.tmuxSessionName
+    ) {
+      const alive = await deps.tmuxSpawner.hasSession(session.tmuxSessionName);
+      if (alive) {
+        const lines = await deps.tmuxSpawner.captureOutput(session.tmuxSessionName);
+        setOutputBuffer(session.id, lines);
+      } else {
+        // Session died since last check
+        await deps.sessionManager.updateStatus(session.id, 'done');
+        const existing = outputBuffers.get(session.id) ?? [];
+        existing.push('', '[tmux session ended]');
+        outputBuffers.set(session.id, existing);
+      }
+    }
   }
 }
 
@@ -178,54 +182,14 @@ async function reconcileSessionStatuses(
   deps: DashboardDeps,
 ): Promise<DashboardState> {
   for (const session of state.sessions) {
-    if (session.status === 'running' && session.pid !== null && !isProcessRunning(session.pid)) {
-      await deps.sessionManager.updatePid(session.id, null);
-      await deps.sessionManager.updateStatus(session.id, 'done');
-    }
-  }
-  return refreshSessions(state, deps);
-}
-
-async function spawnSessionPty(
-  session: Session,
-  deps: DashboardDeps,
-  renderCallback: () => void,
-): Promise<void> {
-  if (ptyHandles.has(session.id)) return;
-
-  const handle = deps.ptySpawner.spawnClaude(session.worktreePath, session.taskDescription);
-  ptyHandles.set(session.id, handle);
-
-  await deps.sessionManager.updatePid(session.id, handle.pid);
-  await deps.sessionManager.updateStatus(session.id, 'running');
-
-  handle.onData((data) => {
-    appendOutput(session.id, data);
-    renderCallback();
-  });
-
-  handle.onExit(async (exitCode) => {
-    ptyHandles.delete(session.id);
-    await deps.sessionManager.updatePid(session.id, null);
-    await deps.sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'created');
-    appendOutput(session.id, `\n[Process exited with code ${exitCode}]`);
-    renderCallback();
-  });
-}
-
-function reattachExistingSessions(state: DashboardState, renderCallback: () => void): void {
-  for (const session of state.sessions) {
-    if (
-      (session.status === 'running' || session.status === 'waiting') &&
-      session.pid !== null &&
-      isProcessRunning(session.pid)
-    ) {
-      if (!outputBuffers.has(session.id)) {
-        outputBuffers.set(session.id, ['[Reattached — output before reattach is not available]']);
-        renderCallback();
+    if (session.status === 'running' && session.tmuxSessionName) {
+      const alive = await deps.tmuxSpawner.hasSession(session.tmuxSessionName);
+      if (!alive) {
+        await deps.sessionManager.updateStatus(session.id, 'done');
       }
     }
   }
+  return refreshSessions(state, deps);
 }
 
 async function generateSessionId(deps: DashboardDeps): Promise<string> {
@@ -243,21 +207,24 @@ async function createNewSession(
 ): Promise<DashboardState> {
   const branchName = slugifyTaskName(taskDescription);
   const sessionId = await generateSessionId(deps);
+  const tmuxSessionName = `sv-${sessionId}`;
   const worktreePath = await deps.gitManager.createWorktree(sessionId, branchName);
   const session = await deps.sessionManager.createSession(
     taskDescription,
     worktreePath,
     branchName,
+    tmuxSessionName,
   );
 
-  const claudeAvailable = await deps.ptySpawner.isCommandAvailable('claude');
+  const claudeAvailable = await deps.tmuxSpawner.isCommandAvailable('claude');
   if (claudeAvailable) {
-    await spawnSessionPty(session, deps, renderCallback);
+    await deps.tmuxSpawner.spawnClaude(tmuxSessionName, worktreePath, taskDescription);
+    await deps.sessionManager.updateStatus(session.id, 'running');
+    setOutputBuffer(session.id, ['[Claude Code started in tmux session ' + tmuxSessionName + ']']);
   } else {
-    appendOutput(
-      session.id,
-      '[Claude Code not found on PATH — worktree created but no process spawned]',
-    );
+    setOutputBuffer(session.id, [
+      '[Claude Code not found on PATH \u2014 worktree created but no session spawned]',
+    ]);
   }
 
   const next = await refreshSessions(state, deps);
@@ -266,6 +233,7 @@ async function createNewSession(
     next.focusedIndex = newIndex;
   }
   next.scrollOffset = 0;
+  renderCallback();
   return next;
 }
 
@@ -273,24 +241,16 @@ async function deleteSession(state: DashboardState, deps: DashboardDeps): Promis
   const session = state.sessions[state.focusedIndex];
   if (!session) return state;
 
-  const handle = ptyHandles.get(session.id);
-  if (handle) {
-    handle.kill();
-    ptyHandles.delete(session.id);
+  // Kill tmux session if alive
+  if (session.tmuxSessionName) {
+    await deps.tmuxSpawner.killSession(session.tmuxSessionName);
   }
 
-  if (session.pid !== null && isProcessRunning(session.pid)) {
-    try {
-      process.kill(session.pid, 'SIGTERM');
-    } catch {
-      // Process may have already exited
-    }
-  }
-
-  await deps.sessionManager.updatePid(session.id, null);
   await deps.sessionManager.updateStatus(session.id, 'done');
 
-  appendOutput(session.id, '\n[Session stopped]');
+  const existing = outputBuffers.get(session.id) ?? [];
+  existing.push('', '[Session stopped]');
+  outputBuffers.set(session.id, existing);
 
   return refreshSessions(state, deps);
 }
@@ -307,27 +267,38 @@ export async function startDashboard(deps: DashboardDeps): Promise<void> {
     renderDashboardFrame(state);
   };
 
-  reattachExistingSessions(state, render);
+  // Initial output capture for running sessions
+  await pollOutputs(state, deps);
   render();
 
-  const pollInterval = setInterval(async () => {
+  // Poll tmux output on an interval
+  const outputPollInterval = setInterval(async () => {
+    try {
+      await pollOutputs(state, deps);
+      render();
+    } catch {
+      // Ignore polling errors
+    }
+  }, OUTPUT_POLL_MS);
+
+  // Reconcile session statuses periodically
+  const reconcileInterval = setInterval(async () => {
     try {
       state = await reconcileSessionStatuses(state, deps);
       render();
     } catch {
       // Ignore polling errors
     }
-  }, 2000);
+  }, 5000);
 
   const mergeWatcher = new MergeWatcher(
     deps.sessionManager,
     deps.gitManager,
     async (event) => {
       const label = event.cleanedUp ? 'merged and cleaned up' : 'merged';
-      appendOutput(
-        event.session.id,
-        `\n[Branch "${event.session.branchName}" was ${label}]`,
-      );
+      const existing = outputBuffers.get(event.session.id) ?? [];
+      existing.push(``, `[Branch "${event.session.branchName}" was ${label}]`);
+      outputBuffers.set(event.session.id, existing);
       state = await refreshSessions(state, deps);
       render();
     },
@@ -337,7 +308,8 @@ export async function startDashboard(deps: DashboardDeps): Promise<void> {
 
   const cleanupAndExit = () => {
     mergeWatcher.stop();
-    clearInterval(pollInterval);
+    clearInterval(outputPollInterval);
+    clearInterval(reconcileInterval);
     process.stdin.removeListener('data', onData);
     process.stdout.removeListener('resize', onResize);
     disableRawMode();
@@ -355,7 +327,7 @@ export async function startDashboard(deps: DashboardDeps): Promise<void> {
     }
 
     if (state.inputMode) {
-      handleInputModeData(data);
+      await handleInputModeData(data);
       return;
     }
 
@@ -407,20 +379,22 @@ export async function startDashboard(deps: DashboardDeps): Promise<void> {
     }
   };
 
-  const handleInputModeData = (data: Buffer) => {
+  const handleInputModeData = async (data: Buffer) => {
     const raw = data.toString('utf-8');
 
+    // Escape exits input mode
     if (raw === '\x1b') {
       state.inputMode = false;
       render();
       return;
     }
 
+    // Forward keystrokes to the focused tmux session
     const session = state.sessions[state.focusedIndex];
-    if (session) {
-      const handle = ptyHandles.get(session.id);
-      if (handle) {
-        handle.write(raw);
+    if (session?.tmuxSessionName) {
+      const alive = await deps.tmuxSpawner.hasSession(session.tmuxSessionName);
+      if (alive) {
+        await deps.tmuxSpawner.sendKeys(session.tmuxSessionName, raw);
       }
     }
   };
@@ -431,10 +405,13 @@ export async function startDashboard(deps: DashboardDeps): Promise<void> {
     // Enter input mode with 'i' or Enter
     if (raw === 'i' || raw === '\r') {
       const session = state.sessions[state.focusedIndex];
-      if (session && ptyHandles.has(session.id)) {
-        state.inputMode = true;
-        render();
-        return;
+      if (session?.tmuxSessionName) {
+        const alive = await deps.tmuxSpawner.hasSession(session.tmuxSessionName);
+        if (alive) {
+          state.inputMode = true;
+          render();
+          return;
+        }
       }
     }
 

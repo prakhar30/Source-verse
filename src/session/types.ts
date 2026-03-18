@@ -5,6 +5,7 @@ export interface Session {
   taskDescription: string;
   worktreePath: string;
   branchName: string;
+  tmuxSessionName: string;
   status: SessionStatus;
   pid: number | null;
   createdAt: string;

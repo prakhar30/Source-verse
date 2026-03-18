@@ -12,6 +12,7 @@ function createMockSession(overrides: Partial<Session> = {}): Session {
     taskDescription: 'Fix bug',
     worktreePath: '/home/user/projects/app-sv-1',
     branchName: 'sv/fix-bug',
+    tmuxSessionName: 'sv-1',
     status: 'running',
     pid: 1234,
     createdAt: '2026-01-01T00:00:00.000Z',

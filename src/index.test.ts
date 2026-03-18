@@ -8,7 +8,7 @@ import {
   GitCommandError,
   slugifyTaskName,
   SessionManager,
-  PtySpawner,
+  TmuxSpawner,
   runPreflight,
   isCommandInstalled,
   checkDiskSpace,
@@ -48,8 +48,8 @@ describe('public API exports', () => {
     expect(typeof SessionManager).toBe('function');
   });
 
-  it('exports PtySpawner', () => {
-    expect(typeof PtySpawner).toBe('function');
+  it('exports TmuxSpawner', () => {
+    expect(typeof TmuxSpawner).toBe('function');
   });
 
   it('exports runPreflight', () => {

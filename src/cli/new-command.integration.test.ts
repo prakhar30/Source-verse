@@ -6,13 +6,17 @@ import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { handleNew } from './commands.js';
-import { PtySpawner } from '../pty/spawner.js';
+import { TmuxSpawner } from '../pty/spawner.js';
 
 const exec = promisify(execFile);
 
-function createMockPtySpawner(): PtySpawner {
-  const spawner = new PtySpawner();
-  spawner.isCommandAvailable = async () => false;
+function createMockTmuxSpawner(): TmuxSpawner {
+  const spawner = new TmuxSpawner();
+  spawner.isCommandAvailable = async (cmd: string) => {
+    // tmux is available but claude is not — so worktrees are created but no session spawned
+    if (cmd === 'tmux') return true;
+    return false;
+  };
   return spawner;
 }
 
@@ -63,7 +67,7 @@ describe('handleNew integration', () => {
   });
 
   it('creates a worktree and branch for a new task', async () => {
-    await handleNew('fix the login bug', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('fix the login bug', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
 
     const worktreePath = join(repoDir, '..', 'my-app-sv-1');
     expect(existsSync(worktreePath)).toBe(true);
@@ -74,7 +78,7 @@ describe('handleNew integration', () => {
   });
 
   it('prints success output with worktree path and branch name', async () => {
-    await handleNew('add user auth', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('add user auth', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
 
     const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Created worktree:');
@@ -83,8 +87,8 @@ describe('handleNew integration', () => {
   });
 
   it('increments session id for subsequent tasks', async () => {
-    await handleNew('first task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
-    await handleNew('second task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('first task', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
+    await handleNew('second task', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
 
     const worktree1 = join(repoDir, '..', 'my-app-sv-1');
     const worktree2 = join(repoDir, '..', 'my-app-sv-2');
@@ -93,15 +97,15 @@ describe('handleNew integration', () => {
   });
 
   it('throws when branch name already exists', async () => {
-    await handleNew('duplicate task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('duplicate task', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
 
-    await expect(handleNew('duplicate task', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true })).rejects.toThrow(
+    await expect(handleNew('duplicate task', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true })).rejects.toThrow(
       'Branch "sv/duplicate-task" already exists',
     );
   });
 
   it('worktree is checked out on the correct branch', async () => {
-    await handleNew('my feature', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('my feature', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
 
     const worktreePath = join(repoDir, '..', 'my-app-sv-1');
     const branch = await git(['rev-parse', '--abbrev-ref', 'HEAD'], worktreePath);
@@ -109,7 +113,7 @@ describe('handleNew integration', () => {
   });
 
   it('worktree branch is based on latest origin/main', async () => {
-    await handleNew('based on main', repoDir, { ptySpawner: createMockPtySpawner(), skipPreflight: true });
+    await handleNew('based on main', repoDir, { tmuxSpawner: createMockTmuxSpawner(), skipPreflight: true });
 
     const mainCommit = await git(['rev-parse', 'origin/main'], repoDir);
     const worktreeBase = await git(['merge-base', 'sv/based-on-main', 'origin/main'], repoDir);
