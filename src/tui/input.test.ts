@@ -44,6 +44,16 @@ describe('parseKeyInput', () => {
     }
   });
 
+  it('parses Q as suspend_all', () => {
+    const event = parseKeyInput(Buffer.from('Q'));
+    expect(event).toEqual({ action: 'suspend_all' });
+  });
+
+  it('parses R as resume_all', () => {
+    const event = parseKeyInput(Buffer.from('R'));
+    expect(event).toEqual({ action: 'resume_all' });
+  });
+
   it('returns null for unrecognized input', () => {
     expect(parseKeyInput(Buffer.from('x'))).toBeNull();
     expect(parseKeyInput(Buffer.from('A'))).toBeNull();

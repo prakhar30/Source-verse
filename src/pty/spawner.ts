@@ -103,6 +103,17 @@ export class TmuxSpawner {
     }
   }
 
+  /** Send a line of text to a window within sv-main. */
+  async sendLineToWindow(windowName: string, text: string): Promise<void> {
+    await execFileAsync('tmux', [
+      'send-keys',
+      '-t',
+      `${MAIN_SESSION}:${windowName}`,
+      text,
+      'Enter',
+    ]);
+  }
+
   /** List all windows in sv-main. */
   async listWindows(): Promise<WindowInfo[]> {
     try {

@@ -8,6 +8,8 @@ import {
   handleCleanup,
   handleStatus,
   handleRestart,
+  handleSuspendAll,
+  handleResumeAll,
 } from './commands.js';
 import { startControlPanel } from '../tui/control-panel.js';
 import { SessionManager } from '../session/manager.js';
@@ -131,6 +133,20 @@ export function createProgram(): Command {
     .description('Restart a crashed or completed session')
     .action(async (id: string) => {
       await handleRestart(id);
+    });
+
+  program
+    .command('suspend-all')
+    .description('Gracefully suspend all running sessions')
+    .action(async () => {
+      await handleSuspendAll();
+    });
+
+  program
+    .command('resume-all')
+    .description('Resume all suspended sessions')
+    .action(async () => {
+      await handleResumeAll();
     });
 
   return program;

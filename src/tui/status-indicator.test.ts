@@ -35,6 +35,13 @@ describe('getStatusIndicator', () => {
     expect(indicator.label).toBe('Merged');
   });
 
+  it('returns correct indicator for suspended', () => {
+    const indicator = getStatusIndicator('suspended');
+    expect(indicator.symbol).toBe('⏸');
+    expect(indicator.label).toBe('Suspended');
+    expect(indicator.color).toBe(style.fg.yellow);
+  });
+
   it('returns correct indicator for cleaned_up', () => {
     const indicator = getStatusIndicator('cleaned_up');
     expect(indicator.symbol).toBe('✕');

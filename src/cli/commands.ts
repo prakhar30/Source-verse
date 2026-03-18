@@ -119,6 +119,7 @@ const STATUS_COLORS: Record<SessionStatus, string> = {
   done: '\x1b[37m',
   error: '\x1b[31m',
   merged: '\x1b[37m',
+  suspended: '\x1b[33m',
   cleaned_up: '\x1b[37m',
 };
 const RESET = '\x1b[0m';
@@ -523,7 +524,12 @@ export async function handleStatus(
   }
 }
 
-const RESTARTABLE_STATUSES: ReadonlySet<SessionStatus> = new Set(['error', 'done', 'created']);
+const RESTARTABLE_STATUSES: ReadonlySet<SessionStatus> = new Set([
+  'error',
+  'done',
+  'created',
+  'suspended',
+]);
 
 export async function handleRestart(
   sessionId: string,
@@ -591,5 +597,102 @@ export async function handleRestart(
     console.log('  Attaching... (detach with Ctrl+b d)');
     console.log('');
     await tmuxSpawner.attachSession(`${MAIN_SESSION}:${sessionName}`);
+  }
+}
+
+export async function handleSuspendAll(
+  deps: {
+    sessionManager?: SessionManager;
+    tmuxSpawner?: TmuxSpawner;
+  } = {},
+): Promise<void> {
+  const sessionManager = deps.sessionManager ?? new SessionManager();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
+
+  const sessions = await sessionManager.listSessions();
+  const running = sessions.filter(
+    (s) => s.status === 'running' && s.tmuxSessionName,
+  );
+
+  if (running.length === 0) {
+    console.log('  No running sessions to suspend.');
+    return;
+  }
+
+  console.log(`  Suspending ${running.length} session(s)...`);
+
+  // Send /exit to all windows
+  for (const session of running) {
+    try {
+      await tmuxSpawner.sendLineToWindow(session.tmuxSessionName, '/exit');
+    } catch {
+      // Window may already be gone
+    }
+  }
+
+  // Poll until windows disappear (max 15s)
+  let remaining = [...running];
+  const start = Date.now();
+  while (remaining.length > 0 && Date.now() - start < 15_000) {
+    await new Promise((r) => setTimeout(r, 500));
+    const stillAlive: Session[] = [];
+    for (const s of remaining) {
+      if (await tmuxSpawner.hasWindow(s.tmuxSessionName)) {
+        stillAlive.push(s);
+      }
+    }
+    remaining = stillAlive;
+  }
+
+  // Force-kill stragglers
+  for (const s of remaining) {
+    await tmuxSpawner.killWindow(s.tmuxSessionName);
+  }
+
+  // Update statuses
+  for (const session of running) {
+    await sessionManager.updateStatus(session.id, 'suspended');
+    console.log(`  \u2713 Suspended ${session.id.slice(0, 8)} (${session.branchName})`);
+  }
+}
+
+export async function handleResumeAll(
+  repoPath = process.cwd(),
+  deps: {
+    sessionManager?: SessionManager;
+    tmuxSpawner?: TmuxSpawner;
+  } = {},
+): Promise<void> {
+  const sessionManager = deps.sessionManager ?? new SessionManager();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
+
+  const sessions = await sessionManager.listSessions();
+  const suspended = sessions.filter((s) => s.status === 'suspended');
+
+  if (suspended.length === 0) {
+    console.log('  No suspended sessions to resume.');
+    return;
+  }
+
+  // Ensure sv-main exists
+  const mainExists = await tmuxSpawner.hasMainSession();
+  if (!mainExists) {
+    const controlCmd = tmuxSpawner.getControlPanelCommand(repoPath);
+    await tmuxSpawner.createMainSession(controlCmd, repoPath);
+  }
+
+  console.log(`  Resuming ${suspended.length} session(s)...`);
+
+  for (const session of suspended) {
+    const sessionName = session.tmuxSessionName || tmuxName(session.id.slice(0, 8));
+    try {
+      await tmuxSpawner.spawnClaudeInWindow(sessionName, session.worktreePath, '--resume');
+      await sessionManager.updateStatus(session.id, 'running');
+      console.log(`  \u2713 Resumed ${session.id.slice(0, 8)} (${session.branchName})`);
+    } catch (err) {
+      console.error(
+        `  \u2717 Failed to resume ${session.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

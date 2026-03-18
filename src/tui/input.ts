@@ -12,6 +12,8 @@ export type KeyAction =
   | 'delete_session'
   | 'cleanup'
   | 'quit'
+  | 'suspend_all'
+  | 'resume_all'
   | 'help'
   | 'refresh'
   | 'enter'
@@ -32,6 +34,12 @@ const CTRL_C = '\x03';
 export function parseKeyInput(data: Buffer): KeyEvent | null {
   const raw = data.toString('utf-8');
 
+  if (raw === 'Q') {
+    return { action: 'suspend_all' };
+  }
+  if (raw === 'R') {
+    return { action: 'resume_all' };
+  }
   if (raw === 'q' || raw === CTRL_C) {
     return { action: 'quit' };
   }

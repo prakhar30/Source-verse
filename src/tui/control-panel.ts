@@ -46,6 +46,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   let sessions: Session[] = [];
   let focusedIndex = 0;
   let prompt: PromptState | null = null;
+  let confirmAction: { type: 'suspend_all' } | null = null;
   let mergeWatcher: MergeWatcher | null = null;
   const tagline =
     Math.random() < 0.5
@@ -129,6 +130,8 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       `${style.bold}d${style.reset} Delete`,
       `${style.bold}c${style.reset} Cleanup`,
       `${style.bold}r${style.reset} Refresh`,
+      `${style.bold}Q${style.reset} Suspend all`,
+      `${style.bold}R${style.reset} Resume all`,
       `${style.bold}?${style.reset} Help`,
       `${style.bold}q${style.reset} Quit`,
     ];
@@ -229,6 +232,81 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     }
   }
 
+  async function suspendAllSessions(): Promise<void> {
+    const runningSessions = sessions.filter(
+      (s) => s.status === 'running' && s.tmuxSessionName,
+    );
+
+    if (runningSessions.length === 0) {
+      writeRaw(`\n  ${style.fg.gray}No running sessions to suspend.${style.reset}`);
+      await sleep(1000);
+      return;
+    }
+
+    writeRaw(`\n  ${style.fg.yellow}Suspending ${runningSessions.length} session(s)...${style.reset}`);
+
+    // Send /exit to all running sessions
+    for (const session of runningSessions) {
+      try {
+        await tmuxSpawner.sendLineToWindow(session.tmuxSessionName, '/exit');
+      } catch {
+        // Window may already be gone
+      }
+    }
+
+    // Poll until all windows are gone (or timeout)
+    let remaining = [...runningSessions];
+    const startTime = Date.now();
+    while (remaining.length > 0 && Date.now() - startTime < 15_000) {
+      await sleep(500);
+      const stillAlive: Session[] = [];
+      for (const session of remaining) {
+        const alive = await tmuxSpawner.hasWindow(session.tmuxSessionName);
+        if (alive) {
+          stillAlive.push(session);
+        }
+      }
+      remaining = stillAlive;
+    }
+
+    // Force-kill any stragglers
+    for (const session of remaining) {
+      await tmuxSpawner.killWindow(session.tmuxSessionName);
+    }
+
+    // Update all statuses to 'suspended'
+    for (const session of runningSessions) {
+      await sessionManager.updateStatus(session.id, 'suspended');
+    }
+  }
+
+  async function resumeAllSessions(): Promise<void> {
+    const suspendedSessions = sessions.filter(
+      (s) => s.status === 'suspended' && s.tmuxSessionName,
+    );
+
+    if (suspendedSessions.length === 0) {
+      writeRaw(`\n  ${style.fg.gray}No suspended sessions to resume.${style.reset}`);
+      await sleep(1000);
+      return;
+    }
+
+    writeRaw(`\n  ${style.fg.green}Resuming ${suspendedSessions.length} session(s)...${style.reset}`);
+
+    for (const session of suspendedSessions) {
+      try {
+        await tmuxSpawner.spawnClaudeInWindow(
+          session.tmuxSessionName,
+          session.worktreePath,
+          '--resume',
+        );
+        await sessionManager.updateStatus(session.id, 'running');
+      } catch {
+        writeRaw(`\n  ${style.fg.red}Failed to resume session ${session.id.slice(0, 8)}${style.reset}`);
+      }
+    }
+  }
+
   // ── Input handling ───────────────────────────────────────────────
 
   function handleInput(data: Buffer): void {
@@ -270,6 +348,31 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
         render();
       }
       return;
+    }
+
+    // Confirmation mode
+    if (confirmAction !== null) {
+      if (raw === 'y' || raw === 'Y') {
+        const action = confirmAction;
+        confirmAction = null;
+        if (action.type === 'suspend_all') {
+          suspendAllSessions()
+            .then(() => {
+              running = false;
+              cleanup();
+            })
+            .catch(() => {
+              loadSessions().then(() => render());
+            });
+        }
+        return;
+      }
+      if (raw === 'n' || raw === 'N' || raw === '\x1b') {
+        confirmAction = null;
+        render();
+        return;
+      }
+      return; // ignore other keys during confirmation
     }
 
     // Command mode
@@ -339,6 +442,25 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
           .catch(() => {});
         return;
 
+      case 'suspend_all': {
+        const runningCount = sessions.filter((s) => s.status === 'running').length;
+        if (runningCount === 0) {
+          writeRaw(`\n  ${style.fg.gray}No running sessions to suspend.${style.reset}`);
+          sleep(1000).then(() => render());
+          return;
+        }
+        confirmAction = { type: 'suspend_all' };
+        writeRaw(`\n  ${style.fg.yellow}Suspend all ${runningCount} running session(s) and quit? [y/N]${style.reset} `);
+        return;
+      }
+
+      case 'resume_all':
+        resumeAllSessions()
+          .then(() => loadSessions())
+          .then(() => render())
+          .catch(() => render());
+        return;
+
       case 'help':
         renderHelp();
         return;
@@ -357,6 +479,8 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     writeRaw(`  ${style.bold}d${style.reset}            Stop focused session\n`);
     writeRaw(`  ${style.bold}c${style.reset}            Cleanup all done sessions\n`);
     writeRaw(`  ${style.bold}r${style.reset}            Refresh session list\n`);
+    writeRaw(`  ${style.bold}Q${style.reset}            Suspend all sessions and quit\n`);
+    writeRaw(`  ${style.bold}R${style.reset}            Resume all suspended sessions\n`);
     writeRaw(`  ${style.bold}q${style.reset}            Quit control panel\n`);
     writeRaw(`\n  ${style.bold}Inside a session window${style.reset}\n`);
     writeRaw(`  ${style.bold}Ctrl+b 0${style.reset}     Back to this control panel\n`);

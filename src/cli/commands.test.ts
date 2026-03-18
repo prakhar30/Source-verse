@@ -12,6 +12,8 @@ import {
   handleCleanup,
   handleStatus,
   handleRestart,
+  handleSuspendAll,
+  handleResumeAll,
 } from './commands.js';
 import { slugifyTaskName } from '../git/slugify.js';
 
@@ -62,6 +64,7 @@ function createMockTmuxSpawner() {
     captureOutput: vi.fn(),
     sendKeys: vi.fn(),
     sendLine: vi.fn(),
+    sendLineToWindow: vi.fn(),
     listSessions: vi.fn(),
     createSession: vi.fn(),
   };
@@ -734,5 +737,248 @@ describe('handleRestart', () => {
       '--resume',
     );
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
+  });
+
+  it('restarts a suspended session successfully', async () => {
+    const session = createTestSession({ status: 'suspended' });
+    mockSessionManager.getSession.mockResolvedValue(session);
+    mockTmuxSpawner.isCommandAvailable.mockResolvedValue(true);
+    mockTmuxSpawner.killWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(true);
+    mockTmuxSpawner.isInMainSession.mockResolvedValue(false);
+    mockTmuxSpawner.attachSession.mockResolvedValue(0);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleRestart(session.id, {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-1',
+      session.worktreePath,
+      '--resume',
+    );
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
+  });
+});
+
+describe('handleSuspendAll', () => {
+  let mockSessionManager: ReturnType<typeof createMockSessionManager>;
+  let mockTmuxSpawner: ReturnType<typeof createMockTmuxSpawner>;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessionManager = createMockSessionManager();
+    mockTmuxSpawner = createMockTmuxSpawner();
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  it('shows message when no running sessions', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ status: 'done' }),
+    ]);
+
+    await handleSuspendAll({
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('No running sessions to suspend');
+  });
+
+  it('sends /exit to all running sessions', async () => {
+    const sessions = [
+      createTestSession({
+        id: 'aaa-1',
+        status: 'running',
+        tmuxSessionName: 'sv-1',
+      }),
+      createTestSession({
+        id: 'bbb-2',
+        status: 'running',
+        tmuxSessionName: 'sv-2',
+      }),
+    ];
+    mockSessionManager.listSessions.mockResolvedValue(sessions);
+    mockTmuxSpawner.sendLineToWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(false); // windows exit immediately
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleSuspendAll({
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.sendLineToWindow).toHaveBeenCalledWith('sv-1', '/exit');
+    expect(mockTmuxSpawner.sendLineToWindow).toHaveBeenCalledWith('sv-2', '/exit');
+  });
+
+  it('updates all running sessions to suspended status', async () => {
+    const sessions = [
+      createTestSession({
+        id: 'aaa-1',
+        status: 'running',
+        tmuxSessionName: 'sv-1',
+      }),
+      createTestSession({
+        id: 'bbb-2',
+        status: 'done',
+        tmuxSessionName: 'sv-2',
+      }),
+    ];
+    mockSessionManager.listSessions.mockResolvedValue(sessions);
+    mockTmuxSpawner.sendLineToWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(false);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleSuspendAll({
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('aaa-1', 'suspended');
+    expect(mockSessionManager.updateStatus).not.toHaveBeenCalledWith('bbb-2', 'suspended');
+  });
+
+  it('force-kills windows that do not exit within timeout', async () => {
+    const session = createTestSession({
+      id: 'aaa-1',
+      status: 'running',
+      tmuxSessionName: 'sv-1',
+    });
+    mockSessionManager.listSessions.mockResolvedValue([session]);
+    mockTmuxSpawner.sendLineToWindow.mockResolvedValue(undefined);
+    // Window never dies on its own — but we mock it to die after first check to avoid real 15s wait
+    mockTmuxSpawner.hasWindow.mockResolvedValueOnce(true).mockResolvedValue(false);
+    mockTmuxSpawner.killWindow.mockResolvedValue(undefined);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleSuspendAll({
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('aaa-1', 'suspended');
+  });
+});
+
+describe('handleResumeAll', () => {
+  let mockSessionManager: ReturnType<typeof createMockSessionManager>;
+  let mockTmuxSpawner: ReturnType<typeof createMockTmuxSpawner>;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessionManager = createMockSessionManager();
+    mockTmuxSpawner = createMockTmuxSpawner();
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  it('shows message when no suspended sessions', async () => {
+    mockSessionManager.listSessions.mockResolvedValue([
+      createTestSession({ status: 'done' }),
+    ]);
+
+    await handleResumeAll('/projects/app', {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('No suspended sessions to resume');
+  });
+
+  it('resumes all suspended sessions with --resume flag', async () => {
+    const sessions = [
+      createTestSession({
+        id: 'aaa-1',
+        status: 'suspended',
+        tmuxSessionName: 'sv-1',
+        worktreePath: '/projects/app-sv-1',
+      }),
+      createTestSession({
+        id: 'bbb-2',
+        status: 'suspended',
+        tmuxSessionName: 'sv-2',
+        worktreePath: '/projects/app-sv-2',
+      }),
+    ];
+    mockSessionManager.listSessions.mockResolvedValue(sessions);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(true);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleResumeAll('/projects/app', {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-1',
+      '/projects/app-sv-1',
+      '--resume',
+    );
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-2',
+      '/projects/app-sv-2',
+      '--resume',
+    );
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('aaa-1', 'running');
+    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('bbb-2', 'running');
+  });
+
+  it('creates sv-main if it does not exist', async () => {
+    const session = createTestSession({
+      id: 'aaa-1',
+      status: 'suspended',
+      tmuxSessionName: 'sv-1',
+    });
+    mockSessionManager.listSessions.mockResolvedValue([session]);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(false);
+    mockTmuxSpawner.createMainSession.mockResolvedValue(undefined);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleResumeAll('/projects/app', {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.createMainSession).toHaveBeenCalled();
+  });
+
+  it('skips non-suspended sessions', async () => {
+    const sessions = [
+      createTestSession({
+        id: 'aaa-1',
+        status: 'suspended',
+        tmuxSessionName: 'sv-1',
+      }),
+      createTestSession({
+        id: 'bbb-2',
+        status: 'done',
+        tmuxSessionName: 'sv-2',
+      }),
+    ];
+    mockSessionManager.listSessions.mockResolvedValue(sessions);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(true);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleResumeAll('/projects/app', {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledTimes(1);
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-1',
+      expect.any(String),
+      '--resume',
+    );
   });
 });
