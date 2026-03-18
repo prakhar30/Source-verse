@@ -2,24 +2,13 @@ import { stat } from 'node:fs/promises';
 import type { SessionManager } from './manager.js';
 import type { Session, SessionStatus } from './types.js';
 
-export interface ProcessChecker {
-  isAlive: (pid: number) => boolean;
+export interface TmuxChecker {
+  hasSession: (sessionName: string) => Promise<boolean>;
 }
 
 export interface PathChecker {
   exists: (path: string) => Promise<boolean>;
 }
-
-const defaultProcessChecker: ProcessChecker = {
-  isAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
 
 const defaultPathChecker: PathChecker = {
   async exists(path: string): Promise<boolean> {
@@ -43,16 +32,16 @@ const ACTIVE_STATUSES: ReadonlySet<SessionStatus> = new Set(['running', 'waiting
 
 export class SessionReconciler {
   private readonly sessionManager: SessionManager;
-  private readonly processChecker: ProcessChecker;
+  private readonly tmuxChecker: TmuxChecker;
   private readonly pathChecker: PathChecker;
 
   constructor(
     sessionManager: SessionManager,
-    processChecker: ProcessChecker = defaultProcessChecker,
+    tmuxChecker: TmuxChecker,
     pathChecker: PathChecker = defaultPathChecker,
   ) {
     this.sessionManager = sessionManager;
-    this.processChecker = processChecker;
+    this.tmuxChecker = tmuxChecker;
     this.pathChecker = pathChecker;
   }
 
@@ -84,13 +73,13 @@ export class SessionReconciler {
   }
 
   private async reconcileActiveSession(session: Session, result: ReconcileResult): Promise<void> {
-    if (session.pid === null) {
+    if (!session.tmuxSessionName) {
       await this.sessionManager.updateStatus(session.id, 'error');
       result.markedError.push(session.id);
       return;
     }
 
-    const alive = this.processChecker.isAlive(session.pid);
+    const alive = await this.tmuxChecker.hasSession(session.tmuxSessionName);
 
     if (alive) {
       result.reattached.push(session.id);
@@ -98,7 +87,6 @@ export class SessionReconciler {
     }
 
     await this.sessionManager.updateStatus(session.id, 'done');
-    await this.sessionManager.updatePid(session.id, null);
     result.markedDone.push(session.id);
   }
 

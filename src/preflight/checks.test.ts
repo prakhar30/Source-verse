@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   assertGitInstalled,
+  assertTmuxInstalled,
   assertIsGitRepository,
   assertHasRemote,
   assertDirectoryWritable,
@@ -191,12 +192,29 @@ describe('checkDiskSpace', () => {
   });
 });
 
+describe('assertTmuxInstalled', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns null when tmux is installed', async () => {
+    setupExecFile(() => ({ stdout: '/usr/bin/tmux' }));
+    expect(await assertTmuxInstalled()).toBeNull();
+  });
+
+  it('returns error when tmux is not installed', async () => {
+    setupExecFile(() => ({ error: new Error('not found') }));
+    const error = await assertTmuxInstalled();
+    expect(error).not.toBeNull();
+    expect(error!.check).toBe('tmux');
+    expect(error!.message).toContain('tmux is not installed');
+  });
+});
+
 describe('runPreflight', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns ok when all checks pass', async () => {
     setupExecFile((cmd, _args) => {
-      if (cmd === 'which') return { stdout: '/usr/bin/git' };
+      if (cmd === 'which') return { stdout: '/usr/bin/found' };
       if (cmd === 'git') return { stdout: 'origin\n' };
       if (cmd === 'df') return { stdout: '     Avail\n5368709120\n' };
       return { stdout: '' };
@@ -209,8 +227,25 @@ describe('runPreflight', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('returns error when git is not installed', async () => {
+  it('returns error when tmux is not installed', async () => {
     setupExecFile(() => ({ error: new Error('not found') }));
+
+    const result = await runPreflight('/repo');
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]!.check).toBe('tmux');
+  });
+
+  it('returns error when git is not installed but tmux is', async () => {
+    let whichCallCount = 0;
+    setupExecFile((cmd) => {
+      if (cmd === 'which') {
+        whichCallCount++;
+        // First which call is for tmux (pass), second is for git (fail)
+        if (whichCallCount === 1) return { stdout: '/usr/bin/tmux' };
+        return { error: new Error('not found') };
+      }
+      return { error: new Error('fail') };
+    });
 
     const result = await runPreflight('/repo');
     expect(result.ok).toBe(false);
@@ -219,7 +254,7 @@ describe('runPreflight', () => {
 
   it('returns error when not a git repo', async () => {
     setupExecFile((cmd) => {
-      if (cmd === 'which') return { stdout: '/usr/bin/git' };
+      if (cmd === 'which') return { stdout: '/usr/bin/found' };
       return { error: new Error('fail') };
     });
     mockIsGitRepo.mockResolvedValue(false);
@@ -231,7 +266,7 @@ describe('runPreflight', () => {
 
   it('includes disk space warning when space is low', async () => {
     setupExecFile((cmd) => {
-      if (cmd === 'which') return { stdout: '/usr/bin/git' };
+      if (cmd === 'which') return { stdout: '/usr/bin/found' };
       if (cmd === 'git') return { stdout: 'origin\n' };
       if (cmd === 'df') return { stdout: '     Avail\n500000000\n' };
       return { stdout: '' };
@@ -245,11 +280,12 @@ describe('runPreflight', () => {
     expect(result.warnings[0]).toContain('Low disk space');
   });
 
-  it('stops early when git not installed — does not check repo', async () => {
+  it('stops early when tmux not installed — does not check git', async () => {
     setupExecFile(() => ({ error: new Error('not found') }));
 
     const result = await runPreflight('/repo');
     expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.check).toBe('tmux');
     expect(mockIsGitRepo).not.toHaveBeenCalled();
   });
 });

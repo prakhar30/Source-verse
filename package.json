@@ -56,12 +56,6 @@
   },
   "packageManager": "pnpm@10.23.0",
   "dependencies": {
-    "commander": "14.0.3",
-    "node-pty": "1.1.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "node-pty"
-    ]
+    "commander": "14.0.3"
   }
 }

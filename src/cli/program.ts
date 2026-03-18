@@ -12,11 +12,21 @@ import {
 import { startDashboard } from '../tui/dashboard.js';
 import { SessionManager } from '../session/manager.js';
 import { GitManager } from '../git/manager.js';
-import { PtySpawner } from '../pty/spawner.js';
+import { TmuxSpawner } from '../pty/spawner.js';
 import { loadConfig } from '../config/loader.js';
 
 const require = createRequire(import.meta.url);
-const { version } = require('../../../package.json') as { version: string };
+// Resolve package.json from both src/ (dev/test) and dist/ (production)
+let version = '0.0.0';
+try {
+  version = (require('../../package.json') as { version: string }).version;
+} catch {
+  try {
+    version = (require('../../../package.json') as { version: string }).version;
+  } catch {
+    // Fallback for test environments
+  }
+}
 
 export function createProgram(): Command {
   const program = new Command();
@@ -31,7 +41,7 @@ export function createProgram(): Command {
       await startDashboard({
         sessionManager: new SessionManager(),
         gitManager: new GitManager(repoPath),
-        ptySpawner: new PtySpawner(),
+        tmuxSpawner: new TmuxSpawner(),
         repoPath,
         mergeDetectionConfig: config.mergeDetection,
       });

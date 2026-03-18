@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { GitManager } from '../git/manager.js';
 import { slugifyTaskName } from '../git/slugify.js';
 import { SessionManager } from '../session/manager.js';
-import { PtySpawner } from '../pty/spawner.js';
+import { TmuxSpawner } from '../pty/spawner.js';
 import type { Session, SessionStatus } from '../session/types.js';
 import { runPreflight } from '../preflight/checks.js';
 
@@ -16,29 +16,8 @@ async function generateSessionId(gitManager: GitManager): Promise<string> {
   return String(nextId);
 }
 
-function attachTerminal(handle: {
-  onData: (cb: (data: string) => void) => void;
-  write: (data: string) => void;
-}): void {
-  handle.onData((data) => {
-    process.stdout.write(data);
-  });
-
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(true);
-  }
-  process.stdin.resume();
-  process.stdin.on('data', (data) => {
-    handle.write(data.toString());
-  });
-}
-
-function detachTerminal(): void {
-  process.stdin.removeAllListeners('data');
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(false);
-  }
-  process.stdin.pause();
+function tmuxName(sessionId: string): string {
+  return `sv-${sessionId}`;
 }
 
 export async function handleNew(
@@ -47,7 +26,7 @@ export async function handleNew(
   deps: {
     gitManager?: GitManager;
     sessionManager?: SessionManager;
-    ptySpawner?: PtySpawner;
+    tmuxSpawner?: TmuxSpawner;
     skipPreflight?: boolean;
   } = {},
 ): Promise<void> {
@@ -61,58 +40,69 @@ export async function handleNew(
       return;
     }
     for (const warning of preflight.warnings) {
-      console.log(`  ⚠ ${warning}`);
+      console.log(`  \u26a0 ${warning}`);
     }
   }
 
   const gitManager = deps.gitManager ?? new GitManager(repoPath);
   const sessionManager = deps.sessionManager ?? new SessionManager();
-  const ptySpawner = deps.ptySpawner ?? new PtySpawner();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
+
+  const tmuxAvailable = await tmuxSpawner.isCommandAvailable('tmux');
+  if (!tmuxAvailable) {
+    console.error('  Error: tmux is not installed. Install it and try again.');
+    console.error('    brew install tmux   (macOS)');
+    console.error('    apt install tmux    (Debian/Ubuntu)');
+    process.exitCode = 1;
+    return;
+  }
 
   const branchName = slugifyTaskName(task);
   const sessionId = await generateSessionId(gitManager);
+  const sessionName = tmuxName(sessionId);
 
   const worktreePath = await gitManager.createWorktree(sessionId, branchName);
   const defaultBranch = await gitManager.getDefaultBranch();
 
-  const session = await sessionManager.createSession(task, worktreePath, branchName);
+  const session = await sessionManager.createSession(task, worktreePath, branchName, sessionName);
 
   console.log('');
-  console.log(`  ✓ Created worktree: ${worktreePath}`);
-  console.log(`  ✓ Branched: ${branchName} (from ${defaultBranch})`);
-  console.log(`  ✓ Session ${sessionId} created`);
+  console.log(`  \u2713 Created worktree: ${worktreePath}`);
+  console.log(`  \u2713 Branched: ${branchName} (from ${defaultBranch})`);
+  console.log(`  \u2713 Session ${sessionId} created`);
 
-  const claudeAvailable = await ptySpawner.isCommandAvailable('claude');
+  const claudeAvailable = await tmuxSpawner.isCommandAvailable('claude');
 
   if (!claudeAvailable) {
     console.log('');
-    console.log('  ⚠ Claude Code not found on PATH. Worktree is ready — run:');
+    console.log('  \u26a0 Claude Code not found on PATH. Worktree is ready \u2014 run:');
     console.log(`    cd ${worktreePath}`);
     console.log('');
     return;
   }
 
-  const handle = ptySpawner.spawnClaude(worktreePath, task);
-
-  await sessionManager.updatePid(session.id, handle.pid);
+  await tmuxSpawner.spawnClaude(sessionName, worktreePath, task);
   await sessionManager.updateStatus(session.id, 'running');
 
-  console.log(`  ✓ Started Claude Code (PID ${handle.pid})`);
+  console.log(`  \u2713 Started Claude Code in tmux session "${sessionName}"`);
+  console.log('');
+  console.log('  Attaching to session... (detach with Ctrl+b d)');
   console.log('');
 
-  attachTerminal(handle);
+  const exitCode = await tmuxSpawner.attachSession(sessionName);
 
-  await new Promise<void>((resolve) => {
-    handle.onExit(async (exitCode) => {
-      detachTerminal();
-      await sessionManager.updatePid(session.id, null);
-      await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'created');
-      console.log('');
-      console.log(`  Claude Code exited (code ${exitCode})`);
-      console.log('');
-      resolve();
-    });
-  });
+  // After detach or session end, check if the tmux session is still alive
+  const stillAlive = await tmuxSpawner.hasSession(sessionName);
+  if (!stillAlive) {
+    await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'created');
+    console.log('');
+    console.log(`  Claude Code session ended (exit code ${exitCode})`);
+  } else {
+    console.log('');
+    console.log(`  Detached from session "${sessionName}". Claude is still running.`);
+    console.log(`  Reattach with: source-verse switch ${session.id.slice(0, 8)}`);
+  }
+  console.log('');
 }
 
 const STATUS_COLORS: Record<SessionStatus, string> = {
@@ -130,7 +120,7 @@ const TASK_TRUNCATE_LENGTH = 40;
 
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength - 1) + '…';
+  return text.slice(0, maxLength - 1) + '\u2026';
 }
 
 function formatElapsed(createdAt: string): string {
@@ -148,7 +138,7 @@ function padRight(text: string, width: number): string {
 }
 
 function formatSessionTable(sessions: Session[]): string {
-  const header = `${padRight('ID', 10)} ${padRight('Task', TASK_TRUNCATE_LENGTH + 2)} ${padRight('Status', 14)} ${padRight('Branch', 30)} Elapsed`;
+  const header = `${padRight('ID', 10)} ${padRight('Task', TASK_TRUNCATE_LENGTH + 2)} ${padRight('Status', 14)} ${padRight('Branch', 30)} ${padRight('Tmux', 10)} Elapsed`;
   const separator = '-'.repeat(header.length);
   const rows = sessions.map((session) => {
     const id = session.id.slice(0, 8);
@@ -156,9 +146,10 @@ function formatSessionTable(sessions: Session[]): string {
     const color = STATUS_COLORS[session.status];
     const status = `${color}${session.status}${RESET}`;
     const branch = session.branchName;
+    const tmux = session.tmuxSessionName ?? '-';
     const elapsed = formatElapsed(session.createdAt);
 
-    return `${padRight(id, 10)} ${padRight(task, TASK_TRUNCATE_LENGTH + 2)} ${padRight(status, 14 + color.length + RESET.length)} ${padRight(branch, 30)} ${elapsed}`;
+    return `${padRight(id, 10)} ${padRight(task, TASK_TRUNCATE_LENGTH + 2)} ${padRight(status, 14 + color.length + RESET.length)} ${padRight(branch, 30)} ${padRight(tmux, 10)} ${elapsed}`;
   });
 
   return [header, separator, ...rows].join('\n');
@@ -167,9 +158,11 @@ function formatSessionTable(sessions: Session[]): string {
 export async function handleList(
   deps: {
     sessionManager?: SessionManager;
+    tmuxSpawner?: TmuxSpawner;
   } = {},
 ): Promise<void> {
   const sessionManager = deps.sessionManager ?? new SessionManager();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
   const sessions = await sessionManager.listSessions();
 
   if (sessions.length === 0) {
@@ -178,6 +171,17 @@ export async function handleList(
     console.log('  Run `source-verse new "your task"` to create one.');
     console.log('');
     return;
+  }
+
+  // Reconcile: check which tmux sessions are actually alive
+  for (const session of sessions) {
+    if (session.status === 'running' && session.tmuxSessionName) {
+      const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+      if (!alive) {
+        await sessionManager.updateStatus(session.id, 'done');
+        session.status = 'done';
+      }
+    }
   }
 
   console.log('');
@@ -189,11 +193,11 @@ export async function handleSwitch(
   sessionId: string,
   deps: {
     sessionManager?: SessionManager;
-    ptySpawner?: PtySpawner;
+    tmuxSpawner?: TmuxSpawner;
   } = {},
 ): Promise<void> {
   const sessionManager = deps.sessionManager ?? new SessionManager();
-  const ptySpawner = deps.ptySpawner ?? new PtySpawner();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
 
   const session = await sessionManager.getSession(sessionId);
 
@@ -203,41 +207,37 @@ export async function handleSwitch(
     return;
   }
 
-  if (session.status !== 'running' && session.status !== 'waiting') {
-    console.error(`  Error: Session ${sessionId.slice(0, 8)} is not running (status: ${session.status})`);
+  if (!session.tmuxSessionName) {
+    console.error(`  Error: Session ${sessionId.slice(0, 8)} has no tmux session.`);
     process.exitCode = 1;
     return;
   }
 
-  const claudeAvailable = await ptySpawner.isCommandAvailable('claude');
-
-  if (!claudeAvailable) {
-    console.error('  Error: Claude Code not found on PATH.');
+  const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+  if (!alive) {
+    console.error(`  Error: tmux session "${session.tmuxSessionName}" is not running.`);
+    console.error(`  Use \`source-verse restart ${sessionId.slice(0, 8)}\` to restart it.`);
+    await sessionManager.updateStatus(session.id, 'done');
     process.exitCode = 1;
     return;
   }
 
   console.log(`  Attaching to session ${session.id.slice(0, 8)} (${session.branchName})...`);
-  console.log('  Press Ctrl+C to detach.');
+  console.log('  Detach with Ctrl+b d');
   console.log('');
 
-  const handle = ptySpawner.spawnClaude(session.worktreePath, '--resume');
+  await tmuxSpawner.attachSession(session.tmuxSessionName);
 
-  await sessionManager.updatePid(session.id, handle.pid);
-
-  attachTerminal(handle);
-
-  await new Promise<void>((resolve) => {
-    handle.onExit(async (exitCode) => {
-      detachTerminal();
-      await sessionManager.updatePid(session.id, null);
-      await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : session.status);
-      console.log('');
-      console.log(`  Detached from session ${session.id.slice(0, 8)} (exit code ${exitCode})`);
-      console.log('');
-      resolve();
-    });
-  });
+  const stillAlive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+  if (!stillAlive) {
+    await sessionManager.updateStatus(session.id, 'done');
+    console.log('');
+    console.log(`  Session ${session.id.slice(0, 8)} has ended.`);
+  } else {
+    console.log('');
+    console.log(`  Detached. Session "${session.tmuxSessionName}" is still running.`);
+  }
+  console.log('');
 }
 
 function isProcessRunning(pid: number): boolean {
@@ -269,10 +269,12 @@ export async function handleStop(
   deps: {
     sessionManager?: SessionManager;
     gitManager?: GitManager;
+    tmuxSpawner?: TmuxSpawner;
   } = {},
 ): Promise<void> {
   const sessionManager = deps.sessionManager ?? new SessionManager();
   const gitManager = deps.gitManager ?? new GitManager(repoPath);
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
 
   const session = await sessionManager.getSession(sessionId);
 
@@ -282,16 +284,24 @@ export async function handleStop(
     return;
   }
 
+  // Kill tmux session if alive
+  if (session.tmuxSessionName) {
+    const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+    if (alive) {
+      await tmuxSpawner.killSession(session.tmuxSessionName);
+      console.log(`  \u2713 Killed tmux session "${session.tmuxSessionName}"`);
+    }
+  }
+
+  // Also kill PID if still running (belt and suspenders)
   if (session.pid !== null && isProcessRunning(session.pid)) {
     process.kill(session.pid, 'SIGTERM');
-    console.log(`  ✓ Stopped process (PID ${session.pid})`);
+    console.log(`  \u2713 Stopped process (PID ${session.pid})`);
     await sessionManager.updatePid(session.id, null);
-  } else if (session.status === 'running') {
-    console.log('  Process is no longer running.');
   }
 
   await sessionManager.updateStatus(session.id, 'done');
-  console.log(`  ✓ Session ${session.id.slice(0, 8)} status set to done`);
+  console.log(`  \u2713 Session ${session.id.slice(0, 8)} status set to done`);
 
   let shouldCleanup = options.cleanup ?? false;
 
@@ -300,10 +310,10 @@ export async function handleStop(
     const hasUnpushed = await gitManager.hasUnpushedCommits(session.branchName).catch(() => false);
 
     if (hasUnpushed) {
-      console.log(`  ⚠ Branch ${session.branchName} has unpushed commits.`);
+      console.log(`  \u26a0 Branch ${session.branchName} has unpushed commits.`);
     }
     if (!isMerged) {
-      console.log(`  ⚠ Branch ${session.branchName} has unmerged changes.`);
+      console.log(`  \u26a0 Branch ${session.branchName} has unmerged changes.`);
     }
 
     shouldCleanup = await confirmAction('  Remove worktree and clean up?');
@@ -315,11 +325,11 @@ export async function handleStop(
 
     if (worktree) {
       await gitManager.removeWorktree(worktree.sessionId);
-      console.log(`  ✓ Removed worktree: ${session.worktreePath}`);
+      console.log(`  \u2713 Removed worktree: ${session.worktreePath}`);
     }
 
     await sessionManager.updateStatus(session.id, 'cleaned_up');
-    console.log(`  ✓ Session ${session.id.slice(0, 8)} cleaned up`);
+    console.log(`  \u2713 Session ${session.id.slice(0, 8)} cleaned up`);
   }
 }
 
@@ -370,7 +380,7 @@ export async function handleCleanup(
 function printSkippedWarnings(skipped: Session[]): void {
   for (const session of skipped) {
     console.log(
-      `  ⚠ Skipping ${session.id.slice(0, 8)} (${session.branchName}): status is ${session.status}`,
+      `  \u26a0 Skipping ${session.id.slice(0, 8)} (${session.branchName}): status is ${session.status}`,
     );
   }
 }
@@ -381,7 +391,7 @@ async function printCleanupPreview(cleanable: Session[]): Promise<void> {
   for (const session of cleanable) {
     const size = await getDirectorySize(session.worktreePath);
     console.log(
-      `    ${session.id.slice(0, 8)} (${session.branchName}) — ${session.status} — ${size}`,
+      `    ${session.id.slice(0, 8)} (${session.branchName}) \u2014 ${session.status} \u2014 ${size}`,
     );
   }
   console.log('');
@@ -401,7 +411,7 @@ async function cleanupSessions(
 
     if (worktree) {
       await gitManager.removeWorktree(worktree.sessionId);
-      console.log(`  ✓ Removed worktree: ${session.worktreePath}`);
+      console.log(`  \u2713 Removed worktree: ${session.worktreePath}`);
     }
 
     await sessionManager.updateStatus(session.id, 'cleaned_up');
@@ -414,7 +424,7 @@ async function cleanupSessions(
 function printCleanupSummary(count: number, sizes: string[]): void {
   const totalDisplay = sizes.filter((s) => s !== 'N/A').join(' + ') || 'unknown';
   console.log('');
-  console.log(`  ✓ Cleaned up ${count} session(s). Freed: ${totalDisplay}`);
+  console.log(`  \u2713 Cleaned up ${count} session(s). Freed: ${totalDisplay}`);
   console.log('');
 }
 
@@ -452,9 +462,11 @@ function formatBytes(bytes: number): string {
 export async function handleStatus(
   deps: {
     sessionManager?: SessionManager;
+    tmuxSpawner?: TmuxSpawner;
   } = {},
 ): Promise<void> {
   const sessionManager = deps.sessionManager ?? new SessionManager();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
   const sessions = await sessionManager.listSessions();
 
   if (sessions.length === 0) {
@@ -462,6 +474,17 @@ export async function handleStatus(
     console.log('  No sessions found.');
     console.log('');
     return;
+  }
+
+  // Reconcile tmux status
+  for (const session of sessions) {
+    if (session.status === 'running' && session.tmuxSessionName) {
+      const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+      if (!alive) {
+        await sessionManager.updateStatus(session.id, 'done');
+        session.status = 'done';
+      }
+    }
   }
 
   const byStatus = new Map<SessionStatus, number>();
@@ -494,7 +517,7 @@ export async function handleStatus(
       console.log(`    ${session.id.slice(0, 8)} (${session.branchName}): ${size}`);
     }
     if (activeSessions.length > 1) {
-      console.log(`    ${'─'.repeat(20)}`);
+      console.log(`    ${'\u2500'.repeat(20)}`);
       console.log(`    Total: ${formatBytes(totalBytes)}`);
     }
     console.log('');
@@ -507,11 +530,11 @@ export async function handleRestart(
   sessionId: string,
   deps: {
     sessionManager?: SessionManager;
-    ptySpawner?: PtySpawner;
+    tmuxSpawner?: TmuxSpawner;
   } = {},
 ): Promise<void> {
   const sessionManager = deps.sessionManager ?? new SessionManager();
-  const ptySpawner = deps.ptySpawner ?? new PtySpawner();
+  const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
 
   const session = await sessionManager.getSession(sessionId);
 
@@ -529,33 +552,47 @@ export async function handleRestart(
     return;
   }
 
-  const claudeAvailable = await ptySpawner.isCommandAvailable('claude');
+  const tmuxAvailable = await tmuxSpawner.isCommandAvailable('tmux');
+  if (!tmuxAvailable) {
+    console.error('  Error: tmux is not installed.');
+    process.exitCode = 1;
+    return;
+  }
 
+  const claudeAvailable = await tmuxSpawner.isCommandAvailable('claude');
   if (!claudeAvailable) {
     console.error('  Error: Claude Code not found on PATH.');
     process.exitCode = 1;
     return;
   }
 
+  // Kill any lingering tmux session with the same name
+  if (session.tmuxSessionName) {
+    await tmuxSpawner.killSession(session.tmuxSessionName);
+  }
+
+  const sessionName = session.tmuxSessionName || tmuxName(sessionId.slice(0, 8));
+
   console.log(`  Restarting session ${session.id.slice(0, 8)} (${session.branchName})...`);
   console.log('');
 
-  const handle = ptySpawner.spawnClaude(session.worktreePath, '--resume');
-
-  await sessionManager.updatePid(session.id, handle.pid);
+  await tmuxSpawner.spawnClaude(sessionName, session.worktreePath, '--resume');
   await sessionManager.updateStatus(session.id, 'running');
 
-  attachTerminal(handle);
+  console.log(`  \u2713 Started Claude Code in tmux session "${sessionName}"`);
+  console.log('  Attaching... (detach with Ctrl+b d)');
+  console.log('');
 
-  await new Promise<void>((resolve) => {
-    handle.onExit(async (exitCode) => {
-      detachTerminal();
-      await sessionManager.updatePid(session.id, null);
-      await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'error');
-      console.log('');
-      console.log(`  Claude Code exited (code ${exitCode})`);
-      console.log('');
-      resolve();
-    });
-  });
+  await tmuxSpawner.attachSession(sessionName);
+
+  const stillAlive = await tmuxSpawner.hasSession(sessionName);
+  if (!stillAlive) {
+    await sessionManager.updateStatus(session.id, 'done');
+    console.log('');
+    console.log(`  Session ended.`);
+  } else {
+    console.log('');
+    console.log(`  Detached. Session "${sessionName}" is still running.`);
+  }
+  console.log('');
 }

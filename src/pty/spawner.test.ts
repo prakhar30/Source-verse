@@ -1,214 +1,192 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('node-pty', () => ({
-  spawn: vi.fn(),
-}));
-
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
+  spawn: vi.fn(),
 }));
 
 vi.mock('node:util', () => ({
   promisify: vi.fn((fn: unknown) => fn),
 }));
 
-import { PtySpawner } from './spawner.js';
-import * as nodePty from 'node-pty';
+import { TmuxSpawner } from './spawner.js';
 import { execFile } from 'node:child_process';
 
-const mockSpawn = vi.mocked(nodePty.spawn);
 const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>;
 
-function createMockPtyProcess() {
-  return {
-    pid: 12345,
-    onData: vi.fn(),
-    onExit: vi.fn(),
-    write: vi.fn(),
-    resize: vi.fn(),
-    kill: vi.fn(),
-  };
-}
-
-describe('PtySpawner', () => {
-  let spawner: PtySpawner;
-  let mockPty: ReturnType<typeof createMockPtyProcess>;
+describe('TmuxSpawner', () => {
+  let spawner: TmuxSpawner;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    spawner = new PtySpawner();
-    mockPty = createMockPtyProcess();
-    mockSpawn.mockReturnValue(mockPty as unknown as nodePty.IPty);
-  });
-
-  describe('spawn', () => {
-    it('spawns a process with the given command and arguments', () => {
-      spawner.spawn({
-        command: 'echo',
-        args: ['hello'],
-        cwd: '/tmp/test',
-      });
-
-      expect(mockSpawn).toHaveBeenCalledWith('echo', ['hello'], {
-        name: 'xterm-256color',
-        cols: 80,
-        rows: 24,
-        cwd: '/tmp/test',
-        env: process.env,
-      });
-    });
-
-    it('uses custom cols and rows when provided', () => {
-      spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-        cols: 120,
-        rows: 40,
-      });
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'bash',
-        [],
-        expect.objectContaining({ cols: 120, rows: 40 }),
-      );
-    });
-
-    it('uses custom env when provided', () => {
-      const customEnv = { PATH: '/usr/bin', HOME: '/home/test' };
-
-      spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-        env: customEnv,
-      });
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'bash',
-        [],
-        expect.objectContaining({ env: customEnv }),
-      );
-    });
-
-    it('returns a handle with the process PID', () => {
-      const handle = spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      });
-
-      expect(handle.pid).toBe(12345);
-    });
-
-    it('forwards data events from the PTY process', () => {
-      const handle = spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      });
-
-      const dataCallback = vi.fn();
-      handle.onData(dataCallback);
-
-      expect(mockPty.onData).toHaveBeenCalledWith(dataCallback);
-    });
-
-    it('forwards exit events with exit code and signal', () => {
-      const handle = spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      });
-
-      const exitCallback = vi.fn();
-      handle.onExit(exitCallback);
-
-      // Get the wrapper function that was passed to mockPty.onExit
-      const wrapperFn = mockPty.onExit.mock.calls[0][0] as (event: {
-        exitCode: number;
-        signal?: number;
-      }) => void;
-      wrapperFn({ exitCode: 0, signal: 15 });
-
-      expect(exitCallback).toHaveBeenCalledWith(0, 15);
-    });
-
-    it('forwards write calls to the PTY process', () => {
-      const handle = spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      });
-
-      handle.write('hello\n');
-
-      expect(mockPty.write).toHaveBeenCalledWith('hello\n');
-    });
-
-    it('forwards resize calls to the PTY process', () => {
-      const handle = spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      });
-
-      handle.resize(100, 50);
-
-      expect(mockPty.resize).toHaveBeenCalledWith(100, 50);
-    });
-
-    it('forwards kill calls to the PTY process', () => {
-      const handle = spawner.spawn({
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      });
-
-      handle.kill();
-
-      expect(mockPty.kill).toHaveBeenCalled();
-    });
-  });
-
-  describe('spawnClaude', () => {
-    it('spawns claude with the task description as argument', () => {
-      spawner.spawnClaude('/tmp/worktree', 'fix the login bug');
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'claude',
-        ['fix the login bug'],
-        expect.objectContaining({ cwd: '/tmp/worktree' }),
-      );
-    });
-
-    it('returns a valid PtyHandle', () => {
-      const handle = spawner.spawnClaude('/tmp/worktree', 'fix bug');
-
-      expect(handle.pid).toBe(12345);
-      expect(handle.onData).toBeTypeOf('function');
-      expect(handle.onExit).toBeTypeOf('function');
-      expect(handle.write).toBeTypeOf('function');
-      expect(handle.kill).toBeTypeOf('function');
-    });
+    spawner = new TmuxSpawner();
   });
 
   describe('isCommandAvailable', () => {
     it('returns true when the command exists on PATH', async () => {
-      mockExecFile.mockResolvedValue({ stdout: '/usr/bin/claude', stderr: '' });
+      mockExecFile.mockResolvedValue({ stdout: '/usr/bin/tmux', stderr: '' });
 
-      const result = await spawner.isCommandAvailable('claude');
+      const result = await spawner.isCommandAvailable('tmux');
 
       expect(result).toBe(true);
-      expect(mockExecFile).toHaveBeenCalledWith('which', ['claude']);
+      expect(mockExecFile).toHaveBeenCalledWith('which', ['tmux']);
     });
 
     it('returns false when the command is not found', async () => {
       mockExecFile.mockRejectedValue(new Error('not found'));
 
-      const result = await spawner.isCommandAvailable('claude');
+      const result = await spawner.isCommandAvailable('tmux');
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('createSession', () => {
+    it('calls tmux new-session with correct arguments', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      await spawner.createSession({
+        sessionName: 'sv-1',
+        command: 'claude',
+        args: ['fix the bug'],
+        cwd: '/tmp/worktree',
+      });
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'new-session',
+        '-d',
+        '-s',
+        'sv-1',
+        '-c',
+        '/tmp/worktree',
+        'claude fix the bug',
+      ]);
+    });
+  });
+
+  describe('spawnClaude', () => {
+    it('creates a tmux session running claude with the task', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      await spawner.spawnClaude('sv-1', '/tmp/worktree', 'fix the login bug');
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'new-session',
+        '-d',
+        '-s',
+        'sv-1',
+        '-c',
+        '/tmp/worktree',
+        'claude fix the login bug',
+      ]);
+    });
+  });
+
+  describe('hasSession', () => {
+    it('returns true when session exists', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      const result = await spawner.hasSession('sv-1');
+
+      expect(result).toBe(true);
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', ['has-session', '-t', 'sv-1']);
+    });
+
+    it('returns false when session does not exist', async () => {
+      mockExecFile.mockRejectedValue(new Error('session not found'));
+
+      const result = await spawner.hasSession('sv-1');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('captureOutput', () => {
+    it('returns lines from tmux capture-pane', async () => {
+      mockExecFile.mockResolvedValue({ stdout: 'line 1\nline 2\nline 3\n', stderr: '' });
+
+      const lines = await spawner.captureOutput('sv-1');
+
+      expect(lines).toEqual(['line 1', 'line 2', 'line 3', '']);
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'capture-pane',
+        '-t',
+        'sv-1',
+        '-p',
+        '-S',
+        '-500',
+      ]);
+    });
+
+    it('returns empty array on failure', async () => {
+      mockExecFile.mockRejectedValue(new Error('fail'));
+
+      const lines = await spawner.captureOutput('sv-1');
+
+      expect(lines).toEqual([]);
+    });
+  });
+
+  describe('sendKeys', () => {
+    it('sends keys to the named session', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      await spawner.sendKeys('sv-1', 'hello');
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', ['send-keys', '-t', 'sv-1', 'hello']);
+    });
+  });
+
+  describe('sendLine', () => {
+    it('sends text followed by Enter', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      await spawner.sendLine('sv-1', 'fix the bug');
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'send-keys',
+        '-t',
+        'sv-1',
+        'fix the bug',
+        'Enter',
+      ]);
+    });
+  });
+
+  describe('killSession', () => {
+    it('kills the named session', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      await spawner.killSession('sv-1');
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', ['kill-session', '-t', 'sv-1']);
+    });
+
+    it('does not throw when session is already dead', async () => {
+      mockExecFile.mockRejectedValue(new Error('session not found'));
+
+      await expect(spawner.killSession('sv-1')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('listSessions', () => {
+    it('returns only sv- prefixed sessions', async () => {
+      mockExecFile.mockResolvedValue({
+        stdout: 'sv-1\nsv-2\nother-session\nsv-3\n',
+        stderr: '',
+      });
+
+      const sessions = await spawner.listSessions();
+
+      expect(sessions).toEqual(['sv-1', 'sv-2', 'sv-3']);
+    });
+
+    it('returns empty array when no tmux server is running', async () => {
+      mockExecFile.mockRejectedValue(new Error('no server running'));
+
+      const sessions = await spawner.listSessions();
+
+      expect(sessions).toEqual([]);
     });
   });
 });

@@ -8,6 +8,7 @@ vi.mock('./commands.js', () => ({
   handleStop: vi.fn(),
   handleCleanup: vi.fn(),
   handleStatus: vi.fn(),
+  handleRestart: vi.fn(),
 }));
 
 vi.mock('../tui/dashboard.js', () => ({
@@ -23,7 +24,7 @@ vi.mock('../git/manager.js', () => ({
 }));
 
 vi.mock('../pty/spawner.js', () => ({
-  PtySpawner: vi.fn(),
+  TmuxSpawner: vi.fn(),
 }));
 
 import {

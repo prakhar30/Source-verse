@@ -20,6 +20,7 @@ export class SessionManager {
     taskDescription: string,
     worktreePath: string,
     branchName: string,
+    tmuxSessionName: string,
   ): Promise<Session> {
     const sessions = await this.loadSessions();
     const now = new Date().toISOString();
@@ -29,6 +30,7 @@ export class SessionManager {
       taskDescription,
       worktreePath,
       branchName,
+      tmuxSessionName,
       status: 'created',
       pid: null,
       createdAt: now,
