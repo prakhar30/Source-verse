@@ -8,7 +8,9 @@
   },
   "main": "./dist/index.js",
   "scripts": {
+    "prebuild": "rm -rf dist",
     "build": "tsc --project tsconfig.json",
+    "prepublishOnly": "npm run build && npm run lint && npm test",
     "dev": "tsx bin/source-verse.ts",
     "test": "vitest run",
     "test:watch": "vitest",

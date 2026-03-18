@@ -1,6 +1,11 @@
-# Publishing source-verse to npm
+# Publishing source-verse
 
-This guide covers everything needed to publish source-verse so anyone can install it with `npm install -g source-verse`.
+This guide covers publishing source-verse to **npm** and **Homebrew** so users can install via:
+
+```bash
+npm install -g source-verse   # npm
+brew install source-verse      # Homebrew
+```
 
 ---
 
@@ -39,27 +44,17 @@ npm view source-verse
   - **Scoped package**: Change the `name` in `package.json` to `@prakhar30/source-verse` (users install with `npm install -g @prakhar30/source-verse`).
   - **Different name**: Pick an alternative unscoped name.
 
-### 3. Fix the CLI entry point for npm consumers
+### 3. Verify the CLI entry point
 
-The current `bin/source-verse.ts` uses `#!/usr/bin/env tsx`, which requires `tsx` at runtime. npm consumers won't have `tsx` installed (it's a devDependency). The `bin` field in `package.json` already points to `./bin/source-verse.js` (the compiled JS output), so the build step handles this — but you need to make sure the compiled file has the correct shebang.
-
-After running `pnpm build`, verify:
+The `bin` field in `package.json` points to `./dist/bin/source-verse.js` and the shebang is already `#!/usr/bin/env node`. After building, verify:
 
 ```bash
+pnpm build
 head -1 dist/bin/source-verse.js
+# Should output: #!/usr/bin/env node
 ```
 
-It should output:
-
-```
-#!/usr/bin/env node
-```
-
-If it shows `#!/usr/bin/env tsx` instead, you need to either:
-- Change the shebang in `bin/source-verse.ts` to `#!/usr/bin/env node` (since tsc preserves shebangs), or
-- Add a `prepublishOnly` script that patches the shebang after build.
-
-> **Note**: TypeScript compiles `bin/source-verse.ts` → `dist/bin/source-verse.js`. The `"bin"` field in `package.json` points to `./bin/source-verse.js`. Make sure this path resolves correctly after build — you may need to update it to `./dist/bin/source-verse.js` or copy the built file to `./bin/source-verse.js`.
+This is already correct — no action needed.
 
 ---
 
@@ -91,7 +86,7 @@ npm pack --dry-run
 This shows exactly which files will be included in the published package. Check that it includes:
 
 - `dist/` — Compiled JavaScript and type declarations
-- `bin/` — CLI entry point
+- `bin/` — TypeScript source for CLI entry point (included but not used at runtime; `dist/bin/` is the actual entry point)
 - `LICENSE`
 - `README.md`
 - `package.json` (always included automatically)
@@ -101,7 +96,7 @@ It should **not** include:
 - `node_modules/`
 - `src/` (TypeScript source)
 - `.env` or any secrets
-- Test files
+- Test files (`*.test.ts`)
 - `pnpm-lock.yaml`
 
 If unexpected files appear, update the `files` field in `package.json`.
@@ -200,15 +195,12 @@ npm blocks names that are confusingly similar to existing packages. Use a scoped
 
 The `bin` path in `package.json` doesn't resolve to a valid file. Check that `pnpm build` produces the expected output and that `"bin"` points to the correct path.
 
-### `node-pty` fails to install for users
+### tmux not found after install
 
-`node-pty` is a native module that requires a C++ compiler. Users may need:
+source-verse requires tmux as a system dependency. Users need to install it separately:
 
-- **macOS**: Xcode Command Line Tools (`xcode-select --install`)
-- **Linux**: `build-essential` package (`sudo apt install build-essential`)
-- **Windows**: [windows-build-tools](https://github.com/nicedoc/windows-build-tools) or Visual Studio Build Tools
-
-Consider documenting this in the README if users report installation issues.
+- **macOS**: `brew install tmux`
+- **Linux**: `sudo apt install tmux` (Debian/Ubuntu) or `sudo dnf install tmux` (Fedora)
 
 ---
 
@@ -219,7 +211,7 @@ Consider documenting this in the README if users report installation issues.
 | `pnpm build` | `tsc --project tsconfig.json` | Compile TypeScript to `dist/` |
 | `pnpm test` | `vitest run` | Run all tests |
 | `pnpm lint` | `eslint "src/**/*.ts" "bin/**/*.ts"` | Check for lint errors |
-| `pnpm dev` | `tsx src/index.ts` | Run in development mode (no build needed) |
+| `pnpm dev` | `tsx bin/source-verse.ts` | Run in development mode (no build needed) |
 
 ---
 
@@ -237,3 +229,123 @@ Use this checklist before every release:
 - [ ] Version bumped (`npm version <type>`)
 - [ ] Published (`npm publish`)
 - [ ] Git tag pushed (`git push origin main --tags`)
+
+---
+
+# Publishing to Homebrew
+
+Homebrew lets macOS (and Linux) users install source-verse without needing Node.js/npm.
+
+## Option A: Homebrew Tap (recommended for getting started)
+
+A tap is your own Homebrew repository. Users install with `brew install prakhar30/tap/source-verse`.
+
+### One-Time Setup
+
+#### 1. Create the tap repo
+
+Create a GitHub repo named `homebrew-tap` under your account (e.g., `prakhar30/homebrew-tap`).
+
+```bash
+gh repo create prakhar30/homebrew-tap --public --description "Homebrew tap for source-verse"
+```
+
+#### 2. Create the formula
+
+Create a file `Formula/source-verse.rb` in the tap repo:
+
+```ruby
+class SourceVerse < Formula
+  desc "Run multiple Claude Code sessions in parallel from a single terminal"
+  homepage "https://github.com/prakhar30/Source-verse"
+  url "https://registry.npmjs.org/source-verse/-/source-verse-1.0.0.tgz"
+  sha256 "REPLACE_WITH_ACTUAL_SHA256"
+  license "MIT"
+
+  depends_on "node"
+  depends_on "tmux"
+
+  def install
+    system "npm", "install", *std_npm_args
+    bin.install_symlink Dir["#{libexec}/bin/*"]
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/source-verse --version")
+  end
+end
+```
+
+#### 3. Get the SHA256
+
+After publishing to npm, get the tarball SHA:
+
+```bash
+curl -sL "https://registry.npmjs.org/source-verse/-/source-verse-1.0.0.tgz" | shasum -a 256
+```
+
+Replace `REPLACE_WITH_ACTUAL_SHA256` and the version in the `url` with the actual values.
+
+#### 4. Push the formula
+
+```bash
+cd homebrew-tap
+git add Formula/source-verse.rb
+git commit -m "source-verse 1.0.0"
+git push
+```
+
+#### 5. Test the install
+
+```bash
+brew tap prakhar30/tap
+brew install source-verse
+source-verse --version
+```
+
+### Updating for New Releases
+
+After each npm publish:
+
+1. Get the new tarball SHA:
+   ```bash
+   curl -sL "https://registry.npmjs.org/source-verse/-/source-verse-<VERSION>.tgz" | shasum -a 256
+   ```
+
+2. Update `Formula/source-verse.rb` — change `url` version and `sha256`
+
+3. Commit and push to the tap repo
+
+Or automate it with `brew bump-formula-pr`:
+
+```bash
+brew bump-formula-pr --url "https://registry.npmjs.org/source-verse/-/source-verse-<VERSION>.tgz" \
+  --sha256 "<NEW_SHA>" \
+  prakhar30/tap/source-verse
+```
+
+## Option B: Homebrew Core (for wider distribution)
+
+To get into the main Homebrew repository (`brew install source-verse` without a tap), the package needs to meet [Homebrew's acceptance criteria](https://docs.brew.sh/Acceptable-Formulae):
+
+- Notable number of users/stars (typically 30+ GitHub stars, 30+ forks, or significant usage)
+- Stable releases
+- No vendored dependencies that duplicate what Homebrew provides
+
+When ready, submit a PR to [homebrew-core](https://github.com/Homebrew/homebrew-core) with the formula. Use `brew create` to generate a starting template:
+
+```bash
+brew create --node "https://registry.npmjs.org/source-verse/-/source-verse-<VERSION>.tgz"
+```
+
+---
+
+## Release Checklist (npm + Homebrew)
+
+- [ ] All tests pass (`pnpm test`)
+- [ ] Build succeeds (`pnpm build`)
+- [ ] `npm version <type>` and `npm publish`
+- [ ] `git push origin main --tags`
+- [ ] Update Homebrew tap formula with new version and SHA256
+- [ ] Verify: `npm install -g source-verse` works
+- [ ] Verify: `brew upgrade source-verse` works
