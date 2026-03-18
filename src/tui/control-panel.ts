@@ -47,6 +47,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   let focusedIndex = 0;
   let prompt: PromptState | null = null;
   let mergeWatcher: MergeWatcher | null = null;
+  const tagline = Math.random() < 0.5
+    ? 'Parallel universes, one terminal.'
+    : "Don't clone repos. Clone yourself.";
 
   // ── Helpers ──────────────────────────────────────────────────────
 
@@ -73,7 +76,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
 
     // Title
     writeRaw(
-      `  ${style.bold}Source-verse${style.reset} ${style.fg.gray}— Session Manager${style.reset}\n\n`,
+      `  ${style.bold}Source-verse${style.reset} ${style.fg.gray}— ${tagline}${style.reset}\n\n`,
     );
 
     if (sessions.length === 0) {
