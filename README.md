@@ -10,14 +10,14 @@ Work on a bug fix, a new feature, and a refactor — all at the same time. Each 
 ## Install
 
 ```bash
-# npm
-npm install -g source-verse
-
-# Homebrew
+# Homebrew (recommended — installs tmux automatically)
 brew tap prakhar30/tap && brew install source-verse
+
+# npm (requires tmux: brew install tmux or apt install tmux)
+npm install -g source-verse
 ```
 
-Requires **tmux**, **git** (>= 2.5), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your PATH.
+Requires **git** (>= 2.5) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your PATH.
 
 ## Usage
 
