@@ -323,9 +323,18 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       await tmuxSpawner.killWindow(session.tmuxSessionName);
     }
 
-    // Update all statuses to 'done'
+    // Clean up worktrees and remove session records
+    const worktrees = await gitManager.listWorktrees();
     for (const session of runningSessions) {
-      await sessionManager.updateStatus(session.id, 'done');
+      try {
+        const worktree = worktrees.find((w) => w.path === session.worktreePath);
+        if (worktree) {
+          await gitManager.removeWorktree(worktree.sessionId, true);
+        }
+      } catch {
+        // Worktree may already be gone
+      }
+      await sessionManager.removeSession(session.id);
     }
   }
 
