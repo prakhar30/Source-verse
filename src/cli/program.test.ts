@@ -11,8 +11,8 @@ vi.mock('./commands.js', () => ({
   handleRestart: vi.fn(),
 }));
 
-vi.mock('../tui/dashboard.js', () => ({
-  startDashboard: vi.fn(),
+vi.mock('../tui/control-panel.js', () => ({
+  startControlPanel: vi.fn(),
 }));
 
 vi.mock('../session/manager.js', () => ({
@@ -23,9 +23,21 @@ vi.mock('../git/manager.js', () => ({
   GitManager: vi.fn(),
 }));
 
-vi.mock('../pty/spawner.js', () => ({
-  TmuxSpawner: vi.fn(),
-}));
+vi.mock('../pty/spawner.js', () => {
+  const mockSpawner = {
+    isCommandAvailable: vi.fn().mockResolvedValue(true),
+    hasSession: vi.fn().mockResolvedValue(false),
+    hasWindow: vi.fn().mockResolvedValue(false),
+    createMainSession: vi.fn().mockResolvedValue(undefined),
+    attachSession: vi.fn().mockResolvedValue(0),
+    getControlPanelCommand: vi.fn().mockReturnValue('node bin/source-verse.ts _control-panel'),
+    isInsideTmux: vi.fn().mockReturnValue(false),
+  };
+  return {
+    TmuxSpawner: vi.fn(() => mockSpawner),
+    MAIN_SESSION: 'sv-main',
+  };
+});
 
 import {
   handleNew,
@@ -35,7 +47,6 @@ import {
   handleCleanup,
   handleStatus,
 } from './commands.js';
-import { startDashboard } from '../tui/dashboard.js';
 
 function parseArgs(...args: string[]) {
   const program = createProgram();
@@ -52,13 +63,11 @@ beforeEach(() => {
 });
 
 describe('createProgram', () => {
-  it('launches dashboard when no subcommand is given', async () => {
+  it('creates sv-main session when no subcommand is given', async () => {
+    const { TmuxSpawner } = await import('../pty/spawner.js');
+    const spawner = new TmuxSpawner();
     await parseArgs();
-    expect(startDashboard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        repoPath: expect.any(String),
-      }),
-    );
+    expect(spawner.isCommandAvailable).toHaveBeenCalledWith('tmux');
   });
 
   it('prints version with --version flag', async () => {

@@ -10,8 +10,10 @@ export type KeyAction =
   | 'prev_session'
   | 'new_session'
   | 'delete_session'
+  | 'cleanup'
   | 'quit'
   | 'help'
+  | 'refresh'
   | 'jump_to_session';
 
 export interface KeyEvent {
@@ -44,8 +46,14 @@ export function parseKeyInput(data: Buffer): KeyEvent | null {
   if (raw === 'd') {
     return { action: 'delete_session' };
   }
-  if (raw === '?') {
+  if (raw === '?' || raw === 'h') {
     return { action: 'help' };
+  }
+  if (raw === 'r') {
+    return { action: 'refresh' };
+  }
+  if (raw === 'c') {
+    return { action: 'cleanup' };
   }
 
   const digit = parseInt(raw, 10);

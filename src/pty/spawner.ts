@@ -1,15 +1,17 @@
 import { execFile, spawn as nodeSpawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { SpawnOptions } from './types.js';
+import type { SpawnOptions, WindowInfo } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
+export const MAIN_SESSION = 'sv-main';
+const CONTROL_WINDOW = 'control';
+
 /**
- * Manages Claude Code sessions inside tmux.
+ * Manages Claude Code sessions inside a single tmux session with multiple windows.
  *
- * Each session gets a named tmux session (e.g. sv-1) that persists
- * independently of this process. Output is captured via tmux capture-pane,
- * input is sent via tmux send-keys, and full attach is a plain tmux attach.
+ * Architecture: one tmux session (sv-main) with window 0 as the control panel
+ * and windows 1+ each running a Claude Code instance in its own worktree.
  */
 export class TmuxSpawner {
   async isCommandAvailable(command: string): Promise<boolean> {
@@ -21,10 +23,183 @@ export class TmuxSpawner {
     }
   }
 
+  // ── Main session management ──────────────────────────────────────
+
+  /** Create the sv-main tmux session with window 0 running the control panel. */
+  async createMainSession(controlCommand: string, cwd: string): Promise<void> {
+    await execFileAsync('tmux', [
+      'new-session',
+      '-d',
+      '-s',
+      MAIN_SESSION,
+      '-n',
+      CONTROL_WINDOW,
+      '-c',
+      cwd,
+      controlCommand,
+    ]);
+  }
+
+  /** Check whether the sv-main session exists. */
+  async hasMainSession(): Promise<boolean> {
+    return this.hasSession(MAIN_SESSION);
+  }
+
+  // ── Window management ────────────────────────────────────────────
+
+  /** Create a new window in sv-main running the given command. */
+  async createWindow(windowName: string, cwd: string, command: string): Promise<void> {
+    await execFileAsync('tmux', [
+      'new-window',
+      '-t',
+      MAIN_SESSION,
+      '-n',
+      windowName,
+      '-c',
+      cwd,
+      command,
+    ]);
+  }
+
+  /** Switch to a window by name within sv-main (only works when inside tmux). */
+  async selectWindow(windowName: string): Promise<void> {
+    await execFileAsync('tmux', [
+      'select-window',
+      '-t',
+      `${MAIN_SESSION}:${windowName}`,
+    ]);
+  }
+
+  /** Check whether a named window exists in sv-main. */
+  async hasWindow(windowName: string): Promise<boolean> {
+    const windows = await this.listWindows();
+    return windows.some((w) => w.name === windowName);
+  }
+
+  /** Kill a specific window in sv-main. */
+  async killWindow(windowName: string): Promise<void> {
+    try {
+      await execFileAsync('tmux', [
+        'kill-window',
+        '-t',
+        `${MAIN_SESSION}:${windowName}`,
+      ]);
+    } catch {
+      // Window may already be dead
+    }
+  }
+
+  /** List all windows in sv-main. */
+  async listWindows(): Promise<WindowInfo[]> {
+    try {
+      const { stdout } = await execFileAsync('tmux', [
+        'list-windows',
+        '-t',
+        MAIN_SESSION,
+        '-F',
+        '#{window_index}\t#{window_name}\t#{window_active}',
+      ]);
+      return stdout
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [index, name, active] = line.split('\t');
+          return {
+            index: Number(index),
+            name: name!,
+            active: active === '1',
+          };
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  /** Spawn Claude Code in a new window within sv-main. */
+  async spawnClaudeInWindow(windowName: string, cwd: string, taskDescription: string): Promise<void> {
+    // Kill stale window with same name if it exists
+    const exists = await this.hasWindow(windowName);
+    if (exists) {
+      await this.killWindow(windowName);
+    }
+    await this.createWindow(windowName, cwd, `claude ${JSON.stringify(taskDescription)}`);
+  }
+
+  // ── Environment detection ────────────────────────────────────────
+
+  /** Check if we're running inside any tmux session. */
+  isInsideTmux(): boolean {
+    return !!process.env.TMUX;
+  }
+
+  /** Get the name of the current tmux session (only valid when inside tmux). */
+  async getCurrentSessionName(): Promise<string> {
+    const { stdout } = await execFileAsync('tmux', [
+      'display-message',
+      '-p',
+      '#{session_name}',
+    ]);
+    return stdout.trim();
+  }
+
+  /** Check if we're inside the sv-main session specifically. */
+  async isInMainSession(): Promise<boolean> {
+    if (!this.isInsideTmux()) return false;
+    const name = await this.getCurrentSessionName();
+    return name === MAIN_SESSION;
+  }
+
+  /** Build the command string to launch the control panel process. */
+  getControlPanelCommand(repoPath: string): string {
+    const bin = process.argv[1]!;
+    return `node ${JSON.stringify(bin)} _control-panel --cwd ${JSON.stringify(repoPath)}`;
+  }
+
+  // ── Session-level operations (kept for compatibility) ────────────
+
+  /** Check whether a named tmux session exists. */
+  async hasSession(sessionName: string): Promise<boolean> {
+    try {
+      await execFileAsync('tmux', ['has-session', '-t', sessionName]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Kill a tmux session. */
+  async killSession(sessionName: string): Promise<void> {
+    try {
+      await execFileAsync('tmux', ['kill-session', '-t', sessionName]);
+    } catch {
+      // Session may already be dead
+    }
+  }
+
   /**
-   * Create a new tmux session running the given command in the background.
-   * The session persists even if this process exits.
+   * Attach the current terminal to a tmux session (optionally at a specific window).
+   * When already inside tmux, uses switch-client instead.
+   * Blocks until the user detaches or the session ends.
    */
+  attachSession(target: string): Promise<number> {
+    const isNested = this.isInsideTmux();
+    const cmd = isNested ? 'switch-client' : 'attach-session';
+    const args = isNested ? [cmd, '-t', target] : [cmd, '-t', target];
+
+    return new Promise((resolve, reject) => {
+      const child = nodeSpawn('tmux', args, {
+        stdio: 'inherit',
+      });
+
+      child.on('error', reject);
+      child.on('close', (code) => {
+        resolve(code ?? 0);
+      });
+    });
+  }
+
+  /** @deprecated Use spawnClaudeInWindow instead. */
   async createSession(options: SpawnOptions): Promise<void> {
     const { sessionName, command, args, cwd } = options;
     const fullCommand = [command, ...args].join(' ');
@@ -40,9 +215,7 @@ export class TmuxSpawner {
     ]);
   }
 
-  /**
-   * Create a tmux session that runs Claude Code with the given task.
-   */
+  /** @deprecated Use spawnClaudeInWindow instead. */
   async spawnClaude(sessionName: string, cwd: string, taskDescription: string): Promise<void> {
     await this.createSession({
       sessionName,
@@ -52,20 +225,7 @@ export class TmuxSpawner {
     });
   }
 
-  /** Check whether a named tmux session exists. */
-  async hasSession(sessionName: string): Promise<boolean> {
-    try {
-      await execFileAsync('tmux', ['has-session', '-t', sessionName]);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Capture the visible pane content (plus scrollback) from a tmux session.
-   * Returns an array of lines.
-   */
+  /** @deprecated No longer needed with native tmux windows. */
   async captureOutput(sessionName: string, scrollbackLines = 500): Promise<string[]> {
     try {
       const { stdout } = await execFileAsync('tmux', [
@@ -82,41 +242,14 @@ export class TmuxSpawner {
     }
   }
 
-  /** Send keystrokes to a tmux session. */
+  /** @deprecated No longer needed with native tmux windows. */
   async sendKeys(sessionName: string, keys: string): Promise<void> {
     await execFileAsync('tmux', ['send-keys', '-t', sessionName, keys]);
   }
 
-  /** Send a line of text followed by Enter. */
+  /** @deprecated No longer needed with native tmux windows. */
   async sendLine(sessionName: string, text: string): Promise<void> {
     await execFileAsync('tmux', ['send-keys', '-t', sessionName, text, 'Enter']);
-  }
-
-  /** Kill a tmux session. */
-  async killSession(sessionName: string): Promise<void> {
-    try {
-      await execFileAsync('tmux', ['kill-session', '-t', sessionName]);
-    } catch {
-      // Session may already be dead
-    }
-  }
-
-  /**
-   * Attach the current terminal to a tmux session.
-   * This blocks until the user detaches (Ctrl+b d) or the session ends.
-   * Returns the exit code of the tmux attach process.
-   */
-  attachSession(sessionName: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const child = nodeSpawn('tmux', ['attach-session', '-t', sessionName], {
-        stdio: 'inherit',
-      });
-
-      child.on('error', reject);
-      child.on('close', (code) => {
-        resolve(code ?? 0);
-      });
-    });
   }
 
   /** List all source-verse tmux sessions (those starting with "sv-"). */

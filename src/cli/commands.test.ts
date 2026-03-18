@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../git/slugify.js', () => ({
   slugifyTaskName: vi.fn(),
@@ -24,6 +24,8 @@ function createMockGitManager() {
     getDefaultBranch: vi.fn(),
     removeWorktree: vi.fn(),
     isBranchMerged: vi.fn(),
+    hasUnpushedCommits: vi.fn(),
+    fetchDefaultBranch: vi.fn(),
   };
 }
 
@@ -41,6 +43,18 @@ function createMockSessionManager() {
 function createMockTmuxSpawner() {
   return {
     isCommandAvailable: vi.fn(),
+    // Window-based methods (new)
+    hasMainSession: vi.fn(),
+    hasWindow: vi.fn(),
+    killWindow: vi.fn(),
+    spawnClaudeInWindow: vi.fn(),
+    selectWindow: vi.fn(),
+    listWindows: vi.fn(),
+    createMainSession: vi.fn(),
+    getControlPanelCommand: vi.fn().mockReturnValue('node bin/source-verse.ts _control-panel'),
+    isInsideTmux: vi.fn().mockReturnValue(false),
+    isInMainSession: vi.fn().mockResolvedValue(false),
+    // Legacy methods (kept for compat)
     spawnClaude: vi.fn(),
     hasSession: vi.fn(),
     attachSession: vi.fn(),
@@ -99,9 +113,13 @@ describe('handleNew', () => {
     });
     mockSessionManager.updateStatus.mockResolvedValue({});
     mockSessionManager.updatePid.mockResolvedValue({});
-    mockTmuxSpawner.spawnClaude.mockResolvedValue(undefined);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(false);
+    mockTmuxSpawner.isInMainSession.mockResolvedValue(false);
+    mockTmuxSpawner.createMainSession.mockResolvedValue(undefined);
+    mockTmuxSpawner.selectWindow.mockResolvedValue(undefined);
     mockTmuxSpawner.attachSession.mockResolvedValue(0);
-    mockTmuxSpawner.hasSession.mockResolvedValue(false);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(false);
   }
 
   it('creates worktree with slugified branch name', async () => {
@@ -178,12 +196,12 @@ describe('handleNew', () => {
       expect(output).toContain('cd /projects/my-app-sv-1');
     });
 
-    it('does not spawn a tmux session', async () => {
+    it('does not spawn a tmux window', async () => {
       setupDefaults(false);
 
       await callHandleNew('fix login bug');
 
-      expect(mockTmuxSpawner.spawnClaude).not.toHaveBeenCalled();
+      expect(mockTmuxSpawner.spawnClaudeInWindow).not.toHaveBeenCalled();
     });
 
     it('does not update session status to running', async () => {
@@ -196,12 +214,12 @@ describe('handleNew', () => {
   });
 
   describe('when claude is available', () => {
-    it('spawns claude in a tmux session', async () => {
+    it('spawns claude in a tmux window', async () => {
       setupDefaults(true);
 
       await callHandleNew('fix login bug');
 
-      expect(mockTmuxSpawner.spawnClaude).toHaveBeenCalledWith(
+      expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
         'sv-1',
         '/projects/my-app-sv-1',
         'fix login bug',
@@ -216,31 +234,31 @@ describe('handleNew', () => {
       expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('session-uuid', 'running');
     });
 
-    it('prints started message with tmux session name', async () => {
+    it('prints started message with window name', async () => {
       setupDefaults(true);
 
       await callHandleNew('fix login bug');
 
       const output = consoleSpy.mock.calls.map((call) => call[0]).join('\n');
-      expect(output).toContain('Started Claude Code in tmux session "sv-1"');
+      expect(output).toContain('Started Claude Code in window "sv-1"');
     });
 
-    it('attaches to the tmux session', async () => {
+    it('creates sv-main when it does not exist', async () => {
       setupDefaults(true);
+      mockTmuxSpawner.hasMainSession.mockResolvedValue(false);
 
       await callHandleNew('fix login bug');
 
-      expect(mockTmuxSpawner.attachSession).toHaveBeenCalledWith('sv-1');
+      expect(mockTmuxSpawner.createMainSession).toHaveBeenCalled();
     });
 
-    it('sets status to done when session ends after detach', async () => {
+    it('attaches to sv-main after creating session', async () => {
       setupDefaults(true);
-      mockTmuxSpawner.hasSession.mockResolvedValue(false);
-      mockTmuxSpawner.attachSession.mockResolvedValue(0);
+      mockTmuxSpawner.hasMainSession.mockResolvedValue(false);
 
       await callHandleNew('fix login bug');
 
-      expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('session-uuid', 'done');
+      expect(mockTmuxSpawner.attachSession).toHaveBeenCalledWith('sv-main:sv-1');
     });
   });
 
@@ -314,7 +332,7 @@ describe('handleList', () => {
   it('displays session table with correct columns', async () => {
     const session = createTestSession();
     mockSessionManager.listSessions.mockResolvedValue([session]);
-    mockTmuxSpawner.hasSession.mockResolvedValue(true);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(true);
 
     await handleList({
       sessionManager: mockSessionManager as never,
@@ -337,7 +355,7 @@ describe('handleList', () => {
       taskDescription: 'This is a very long task description that should be truncated at forty characters',
     });
     mockSessionManager.listSessions.mockResolvedValue([session]);
-    mockTmuxSpawner.hasSession.mockResolvedValue(true);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(true);
 
     await handleList({
       sessionManager: mockSessionManager as never,
@@ -355,7 +373,7 @@ describe('handleList', () => {
       createTestSession({ id: 'bbbb2222-0000-0000-0000-000000000000', taskDescription: 'task two', status: 'done' }),
     ];
     mockSessionManager.listSessions.mockResolvedValue(sessions);
-    mockTmuxSpawner.hasSession.mockResolvedValue(true);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(true);
 
     await handleList({
       sessionManager: mockSessionManager as never,
@@ -397,10 +415,10 @@ describe('handleSwitch', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('errors when tmux session is not running', async () => {
+  it('errors when window is not running', async () => {
     const session = createTestSession({ status: 'running' });
     mockSessionManager.getSession.mockResolvedValue(session);
-    mockTmuxSpawner.hasSession.mockResolvedValue(false);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(false);
     mockSessionManager.updateStatus.mockResolvedValue({});
 
     await handleSwitch(session.id, {
@@ -413,19 +431,19 @@ describe('handleSwitch', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('attaches to tmux session for running session', async () => {
+  it('attaches to sv-main at the right window', async () => {
     const session = createTestSession({ status: 'running' });
     mockSessionManager.getSession.mockResolvedValue(session);
-    mockTmuxSpawner.hasSession.mockResolvedValue(true);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(true);
+    mockTmuxSpawner.isInMainSession.mockResolvedValue(false);
     mockTmuxSpawner.attachSession.mockResolvedValue(0);
-    mockSessionManager.updateStatus.mockResolvedValue({});
 
     await handleSwitch(session.id, {
       sessionManager: mockSessionManager as never,
       tmuxSpawner: mockTmuxSpawner as never,
     });
 
-    expect(mockTmuxSpawner.attachSession).toHaveBeenCalledWith('sv-1');
+    expect(mockTmuxSpawner.attachSession).toHaveBeenCalledWith('sv-main:sv-1');
   });
 });
 
@@ -460,12 +478,12 @@ describe('handleStop', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('kills tmux session and updates status to done', async () => {
+  it('kills tmux window and updates status to done', async () => {
     const session = createTestSession({ status: 'running', pid: null });
     mockSessionManager.getSession.mockResolvedValue(session);
     mockSessionManager.updateStatus.mockResolvedValue({});
-    mockTmuxSpawner.hasSession.mockResolvedValue(true);
-    mockTmuxSpawner.killSession.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(true);
+    mockTmuxSpawner.killWindow.mockResolvedValue(undefined);
 
     await handleStop(session.id, {}, '/projects/app', {
       sessionManager: mockSessionManager as never,
@@ -473,7 +491,7 @@ describe('handleStop', () => {
       tmuxSpawner: mockTmuxSpawner as never,
     });
 
-    expect(mockTmuxSpawner.killSession).toHaveBeenCalledWith('sv-1');
+    expect(mockTmuxSpawner.killWindow).toHaveBeenCalledWith('sv-1');
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'done');
   });
 
@@ -481,7 +499,7 @@ describe('handleStop', () => {
     const session = createTestSession({ status: 'running', pid: null });
     mockSessionManager.getSession.mockResolvedValue(session);
     mockSessionManager.updateStatus.mockResolvedValue({});
-    mockTmuxSpawner.hasSession.mockResolvedValue(false);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(false);
     mockGitManager.listWorktrees.mockResolvedValue([
       { path: session.worktreePath, branch: session.branchName, sessionId: '1' },
     ]);
@@ -607,7 +625,7 @@ describe('handleStatus', () => {
       createTestSession({ id: 'bbb-2', status: 'done' }),
     ];
     mockSessionManager.listSessions.mockResolvedValue(sessions);
-    mockTmuxSpawner.hasSession.mockResolvedValue(true);
+    mockTmuxSpawner.hasWindow.mockResolvedValue(true);
 
     await handleStatus({
       sessionManager: mockSessionManager as never,
@@ -680,10 +698,11 @@ describe('handleRestart', () => {
     const session = createTestSession({ status: 'error' });
     mockSessionManager.getSession.mockResolvedValue(session);
     mockTmuxSpawner.isCommandAvailable.mockResolvedValue(true);
-    mockTmuxSpawner.killSession.mockResolvedValue(undefined);
-    mockTmuxSpawner.spawnClaude.mockResolvedValue(undefined);
+    mockTmuxSpawner.killWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(true);
+    mockTmuxSpawner.isInMainSession.mockResolvedValue(false);
     mockTmuxSpawner.attachSession.mockResolvedValue(0);
-    mockTmuxSpawner.hasSession.mockResolvedValue(false);
     mockSessionManager.updateStatus.mockResolvedValue({});
 
     await handleRestart(session.id, {
@@ -691,8 +710,7 @@ describe('handleRestart', () => {
       tmuxSpawner: mockTmuxSpawner as never,
     });
 
-    expect(mockTmuxSpawner.spawnClaude).toHaveBeenCalledWith('sv-1', session.worktreePath, '--resume');
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith('sv-1', session.worktreePath, '--resume');
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
-    expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'done');
   });
 });

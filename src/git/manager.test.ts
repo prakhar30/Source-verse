@@ -105,10 +105,10 @@ describe('GitManager', () => {
   describe('removeWorktree', () => {
     it('removes worktree and deletes merged branch', async () => {
       mockExecGit
-        .mockResolvedValueOnce('') // worktree remove
-        .mockResolvedValueOnce( // worktree list (findBranchForWorktree)
+        .mockResolvedValueOnce( // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
+        .mockResolvedValueOnce('') // worktree remove
         .mockResolvedValueOnce('  main\n') // getDefaultBranch (isBranchMerged)
         .mockResolvedValueOnce('  sv/fix-login\n  main\n') // branch --merged
         .mockResolvedValueOnce(''); // branch -d
@@ -123,10 +123,10 @@ describe('GitManager', () => {
 
     it('force deletes unmerged branch when flag is set', async () => {
       mockExecGit
-        .mockResolvedValueOnce('') // worktree remove
-        .mockResolvedValueOnce( // worktree list
+        .mockResolvedValueOnce( // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
+        .mockResolvedValueOnce('') // worktree remove
         .mockResolvedValueOnce('  main\n') // getDefaultBranch
         .mockResolvedValueOnce('  main\n') // branch --merged (does not include sv/fix-login)
         .mockResolvedValueOnce(''); // branch -D
@@ -141,10 +141,10 @@ describe('GitManager', () => {
 
     it('does not delete unmerged branch when force flag is false', async () => {
       mockExecGit
-        .mockResolvedValueOnce('') // worktree remove
-        .mockResolvedValueOnce( // worktree list
+        .mockResolvedValueOnce( // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
+        .mockResolvedValueOnce('') // worktree remove
         .mockResolvedValueOnce('  main\n') // getDefaultBranch
         .mockResolvedValueOnce('  main\n'); // branch --merged (not merged)
 

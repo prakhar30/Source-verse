@@ -66,9 +66,11 @@ export class GitManager {
       );
     }
 
+    // Find the branch BEFORE removing the worktree (git forgets it after removal)
+    const branchName = await this.findBranchForWorktree(worktreePath);
+
     await execGit(['worktree', 'remove', '--force', worktreePath], this.repoPath);
 
-    const branchName = await this.findBranchForWorktree(worktreePath);
     if (!branchName) return;
 
     const merged = await this.isBranchMerged(branchName);

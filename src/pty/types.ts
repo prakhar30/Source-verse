@@ -9,3 +9,9 @@ export interface SpawnOptions {
   args: string[];
   cwd: string;
 }
+
+export interface WindowInfo {
+  index: number;
+  name: string;
+  active: boolean;
+}

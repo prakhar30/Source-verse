@@ -44,7 +44,12 @@ export class SessionManager {
 
   async getSession(id: string): Promise<Session | null> {
     const sessions = await this.loadSessions();
-    return sessions.find((session) => session.id === id) ?? null;
+    // Support both full UUIDs and short prefix matches (e.g. first 8 chars)
+    const exact = sessions.find((session) => session.id === id);
+    if (exact) return exact;
+    const prefixMatches = sessions.filter((session) => session.id.startsWith(id));
+    if (prefixMatches.length === 1) return prefixMatches[0]!;
+    return null;
   }
 
   async listSessions(): Promise<Session[]> {

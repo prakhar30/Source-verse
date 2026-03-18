@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { GitManager } from '../git/manager.js';
 import { slugifyTaskName } from '../git/slugify.js';
 import { SessionManager } from '../session/manager.js';
-import { TmuxSpawner } from '../pty/spawner.js';
+import { TmuxSpawner, MAIN_SESSION } from '../pty/spawner.js';
 import type { Session, SessionStatus } from '../session/types.js';
 import { runPreflight } from '../preflight/checks.js';
 
@@ -81,28 +81,35 @@ export async function handleNew(
     return;
   }
 
-  await tmuxSpawner.spawnClaude(sessionName, worktreePath, task);
-  await sessionManager.updateStatus(session.id, 'running');
+  // Ensure sv-main exists
+  const mainExists = await tmuxSpawner.hasMainSession();
 
-  console.log(`  \u2713 Started Claude Code in tmux session "${sessionName}"`);
-  console.log('');
-  console.log('  Attaching to session... (detach with Ctrl+b d)');
-  console.log('');
-
-  const exitCode = await tmuxSpawner.attachSession(sessionName);
-
-  // After detach or session end, check if the tmux session is still alive
-  const stillAlive = await tmuxSpawner.hasSession(sessionName);
-  if (!stillAlive) {
-    await sessionManager.updateStatus(session.id, exitCode === 0 ? 'done' : 'created');
+  if (await tmuxSpawner.isInMainSession()) {
+    // Inside sv-main: create window and switch to it
+    await tmuxSpawner.spawnClaudeInWindow(sessionName, worktreePath, task);
+    await sessionManager.updateStatus(session.id, 'running');
+    console.log(`  \u2713 Started Claude Code in window "${sessionName}"`);
     console.log('');
-    console.log(`  Claude Code session ended (exit code ${exitCode})`);
+    await tmuxSpawner.selectWindow(sessionName);
+  } else if (mainExists) {
+    // sv-main exists but we're outside it: add window, attach
+    await tmuxSpawner.spawnClaudeInWindow(sessionName, worktreePath, task);
+    await sessionManager.updateStatus(session.id, 'running');
+    console.log(`  \u2713 Started Claude Code in window "${sessionName}"`);
+    console.log('  Attaching to sv-main... (detach with Ctrl+b d)');
+    console.log('');
+    await tmuxSpawner.attachSession(`${MAIN_SESSION}:${sessionName}`);
   } else {
+    // No sv-main: create it with control panel, then add session window
+    const controlCmd = tmuxSpawner.getControlPanelCommand(repoPath);
+    await tmuxSpawner.createMainSession(controlCmd, repoPath);
+    await tmuxSpawner.spawnClaudeInWindow(sessionName, worktreePath, task);
+    await sessionManager.updateStatus(session.id, 'running');
+    console.log(`  \u2713 Started Claude Code in window "${sessionName}"`);
+    console.log('  Attaching to sv-main... (detach with Ctrl+b d)');
     console.log('');
-    console.log(`  Detached from session "${sessionName}". Claude is still running.`);
-    console.log(`  Reattach with: source-verse switch ${session.id.slice(0, 8)}`);
+    await tmuxSpawner.attachSession(`${MAIN_SESSION}:${sessionName}`);
   }
-  console.log('');
 }
 
 const STATUS_COLORS: Record<SessionStatus, string> = {
@@ -173,10 +180,10 @@ export async function handleList(
     return;
   }
 
-  // Reconcile: check which tmux sessions are actually alive
+  // Reconcile: check which windows are actually alive
   for (const session of sessions) {
     if (session.status === 'running' && session.tmuxSessionName) {
-      const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+      const alive = await tmuxSpawner.hasWindow(session.tmuxSessionName);
       if (!alive) {
         await sessionManager.updateStatus(session.id, 'done');
         session.status = 'done';
@@ -213,31 +220,25 @@ export async function handleSwitch(
     return;
   }
 
-  const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+  const alive = await tmuxSpawner.hasWindow(session.tmuxSessionName);
   if (!alive) {
-    console.error(`  Error: tmux session "${session.tmuxSessionName}" is not running.`);
+    console.error(`  Error: Window "${session.tmuxSessionName}" is not running.`);
     console.error(`  Use \`source-verse restart ${sessionId.slice(0, 8)}\` to restart it.`);
     await sessionManager.updateStatus(session.id, 'done');
     process.exitCode = 1;
     return;
   }
 
-  console.log(`  Attaching to session ${session.id.slice(0, 8)} (${session.branchName})...`);
-  console.log('  Detach with Ctrl+b d');
-  console.log('');
-
-  await tmuxSpawner.attachSession(session.tmuxSessionName);
-
-  const stillAlive = await tmuxSpawner.hasSession(session.tmuxSessionName);
-  if (!stillAlive) {
-    await sessionManager.updateStatus(session.id, 'done');
-    console.log('');
-    console.log(`  Session ${session.id.slice(0, 8)} has ended.`);
+  if (await tmuxSpawner.isInMainSession()) {
+    // Inside sv-main: just switch window
+    await tmuxSpawner.selectWindow(session.tmuxSessionName);
   } else {
+    // Outside: attach to sv-main at the right window
+    console.log(`  Attaching to session ${session.id.slice(0, 8)} (${session.branchName})...`);
+    console.log('  Detach with Ctrl+b d');
     console.log('');
-    console.log(`  Detached. Session "${session.tmuxSessionName}" is still running.`);
+    await tmuxSpawner.attachSession(`${MAIN_SESSION}:${session.tmuxSessionName}`);
   }
-  console.log('');
 }
 
 function isProcessRunning(pid: number): boolean {
@@ -284,12 +285,12 @@ export async function handleStop(
     return;
   }
 
-  // Kill tmux session if alive
+  // Kill tmux window if alive
   if (session.tmuxSessionName) {
-    const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+    const alive = await tmuxSpawner.hasWindow(session.tmuxSessionName);
     if (alive) {
-      await tmuxSpawner.killSession(session.tmuxSessionName);
-      console.log(`  \u2713 Killed tmux session "${session.tmuxSessionName}"`);
+      await tmuxSpawner.killWindow(session.tmuxSessionName);
+      console.log(`  \u2713 Killed window "${session.tmuxSessionName}"`);
     }
   }
 
@@ -476,10 +477,10 @@ export async function handleStatus(
     return;
   }
 
-  // Reconcile tmux status
+  // Reconcile: check which windows are alive
   for (const session of sessions) {
     if (session.status === 'running' && session.tmuxSessionName) {
-      const alive = await tmuxSpawner.hasSession(session.tmuxSessionName);
+      const alive = await tmuxSpawner.hasWindow(session.tmuxSessionName);
       if (!alive) {
         await sessionManager.updateStatus(session.id, 'done');
         session.status = 'done';
@@ -566,33 +567,31 @@ export async function handleRestart(
     return;
   }
 
-  // Kill any lingering tmux session with the same name
-  if (session.tmuxSessionName) {
-    await tmuxSpawner.killSession(session.tmuxSessionName);
-  }
-
   const sessionName = session.tmuxSessionName || tmuxName(sessionId.slice(0, 8));
+
+  // Kill any lingering window with the same name
+  await tmuxSpawner.killWindow(sessionName);
 
   console.log(`  Restarting session ${session.id.slice(0, 8)} (${session.branchName})...`);
   console.log('');
 
-  await tmuxSpawner.spawnClaude(sessionName, session.worktreePath, '--resume');
+  // Ensure sv-main exists
+  const mainExists = await tmuxSpawner.hasMainSession();
+  if (!mainExists) {
+    const controlCmd = tmuxSpawner.getControlPanelCommand(process.cwd());
+    await tmuxSpawner.createMainSession(controlCmd, process.cwd());
+  }
+
+  await tmuxSpawner.spawnClaudeInWindow(sessionName, session.worktreePath, '--resume');
   await sessionManager.updateStatus(session.id, 'running');
 
-  console.log(`  \u2713 Started Claude Code in tmux session "${sessionName}"`);
-  console.log('  Attaching... (detach with Ctrl+b d)');
-  console.log('');
+  console.log(`  \u2713 Started Claude Code in window "${sessionName}"`);
 
-  await tmuxSpawner.attachSession(sessionName);
-
-  const stillAlive = await tmuxSpawner.hasSession(sessionName);
-  if (!stillAlive) {
-    await sessionManager.updateStatus(session.id, 'done');
-    console.log('');
-    console.log(`  Session ended.`);
+  if (await tmuxSpawner.isInMainSession()) {
+    await tmuxSpawner.selectWindow(sessionName);
   } else {
+    console.log('  Attaching... (detach with Ctrl+b d)');
     console.log('');
-    console.log(`  Detached. Session "${sessionName}" is still running.`);
+    await tmuxSpawner.attachSession(`${MAIN_SESSION}:${sessionName}`);
   }
-  console.log('');
 }

@@ -9,10 +9,10 @@ import {
   handleStatus,
   handleRestart,
 } from './commands.js';
-import { startDashboard } from '../tui/dashboard.js';
+import { startControlPanel } from '../tui/control-panel.js';
 import { SessionManager } from '../session/manager.js';
 import { GitManager } from '../git/manager.js';
-import { TmuxSpawner } from '../pty/spawner.js';
+import { TmuxSpawner, MAIN_SESSION } from '../pty/spawner.js';
 import { loadConfig } from '../config/loader.js';
 
 const require = createRequire(import.meta.url);
@@ -37,8 +37,44 @@ export function createProgram(): Command {
     .version(version, '-V, --version')
     .action(async () => {
       const repoPath = process.cwd();
+      const tmuxSpawner = new TmuxSpawner();
+
+      const tmuxAvailable = await tmuxSpawner.isCommandAvailable('tmux');
+      if (!tmuxAvailable) {
+        console.error('  Error: tmux is not installed. Install it and try again.');
+        console.error('    brew install tmux   (macOS)');
+        console.error('    apt install tmux    (Debian/Ubuntu)');
+        process.exitCode = 1;
+        return;
+      }
+
+      const sessionExists = await tmuxSpawner.hasSession(MAIN_SESSION);
+
+      if (sessionExists) {
+        // Ensure control window exists (user may have closed it)
+        const hasControl = await tmuxSpawner.hasWindow('control');
+        if (!hasControl) {
+          const controlCmd = tmuxSpawner.getControlPanelCommand(repoPath);
+          await tmuxSpawner.createWindow('control', repoPath, controlCmd);
+        }
+        // Attach (or switch-client if already in tmux) to window 0
+        await tmuxSpawner.attachSession(`${MAIN_SESSION}:control`);
+      } else {
+        // Create sv-main with the control panel in window 0
+        const controlCmd = tmuxSpawner.getControlPanelCommand(repoPath);
+        await tmuxSpawner.createMainSession(controlCmd, repoPath);
+        await tmuxSpawner.attachSession(MAIN_SESSION);
+      }
+    });
+
+  // Hidden command: runs the control panel TUI inside tmux window 0
+  program
+    .command('_control-panel', { hidden: true })
+    .option('--cwd <path>', 'Working directory for the repo')
+    .action(async (options: { cwd?: string }) => {
+      const repoPath = options.cwd || process.cwd();
       const config = await loadConfig();
-      await startDashboard({
+      await startControlPanel({
         sessionManager: new SessionManager(),
         gitManager: new GitManager(repoPath),
         tmuxSpawner: new TmuxSpawner(),
