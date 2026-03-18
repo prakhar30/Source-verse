@@ -16,6 +16,7 @@ export interface Session {
   tmuxSessionName: string;
   status: SessionStatus;
   pid: number | null;
+  claudeSessionId: string | null;
   createdAt: string;
   updatedAt: string;
 }

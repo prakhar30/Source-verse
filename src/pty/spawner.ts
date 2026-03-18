@@ -146,13 +146,15 @@ export class TmuxSpawner {
     windowName: string,
     cwd: string,
     taskDescription: string,
+    options?: { raw?: boolean },
   ): Promise<void> {
     // Kill stale window with same name if it exists
     const exists = await this.hasWindow(windowName);
     if (exists) {
       await this.killWindow(windowName);
     }
-    await this.createWindow(windowName, cwd, `claude ${JSON.stringify(taskDescription)}`);
+    const arg = options?.raw ? taskDescription : JSON.stringify(taskDescription);
+    await this.createWindow(windowName, cwd, `claude ${arg}`);
   }
 
   // ── Environment detection ────────────────────────────────────────

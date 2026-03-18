@@ -12,6 +12,7 @@ import type { Session } from '../session/types.js';
 import type { MergeDetectionConfig } from '../config/types.js';
 import { MergeWatcher } from '../merge/watcher.js';
 import { slugifyTaskName } from '../git/slugify.js';
+import { resolveClaudeSessionId } from '../session/claude-resolver.js';
 import { formatStatus } from './status-indicator.js';
 import { style, screen, cursor, fitText, writeRaw } from './renderer.js';
 import { parseKeyInput, enableRawMode, disableRawMode } from './input.js';
@@ -274,9 +275,57 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       await tmuxSpawner.killWindow(session.tmuxSessionName);
     }
 
-    // Update all statuses to 'suspended'
+    // Resolve Claude session IDs and update statuses
     for (const session of runningSessions) {
+      const claudeId = await resolveClaudeSessionId(session.worktreePath);
+      if (claudeId) {
+        await sessionManager.updateClaudeSessionId(session.id, claudeId);
+      }
       await sessionManager.updateStatus(session.id, 'suspended');
+    }
+  }
+
+  async function shutdownAllSessions(): Promise<void> {
+    const runningSessions = sessions.filter(
+      (s) => s.status === 'running' && s.tmuxSessionName,
+    );
+
+    if (runningSessions.length === 0) return;
+
+    writeRaw(`\n  ${style.fg.yellow}Shutting down ${runningSessions.length} session(s)...${style.reset}`);
+
+    // Send /exit to all running sessions
+    for (const session of runningSessions) {
+      try {
+        await tmuxSpawner.sendLineToWindow(session.tmuxSessionName, '/exit');
+      } catch {
+        // Window may already be gone
+      }
+    }
+
+    // Poll until all windows are gone (or timeout)
+    let remaining = [...runningSessions];
+    const startTime = Date.now();
+    while (remaining.length > 0 && Date.now() - startTime < 15_000) {
+      await sleep(500);
+      const stillAlive: Session[] = [];
+      for (const session of remaining) {
+        const alive = await tmuxSpawner.hasWindow(session.tmuxSessionName);
+        if (alive) {
+          stillAlive.push(session);
+        }
+      }
+      remaining = stillAlive;
+    }
+
+    // Force-kill any stragglers
+    for (const session of remaining) {
+      await tmuxSpawner.killWindow(session.tmuxSessionName);
+    }
+
+    // Update all statuses to 'done'
+    for (const session of runningSessions) {
+      await sessionManager.updateStatus(session.id, 'done');
     }
   }
 
@@ -295,10 +344,13 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
 
     for (const session of suspendedSessions) {
       try {
+        const claudeId = session.claudeSessionId;
+        const claudeArgs = claudeId ? `--resume ${claudeId}` : '--continue';
         await tmuxSpawner.spawnClaudeInWindow(
           session.tmuxSessionName,
           session.worktreePath,
-          '--resume',
+          claudeArgs,
+          { raw: true },
         );
         await sessionManager.updateStatus(session.id, 'running');
       } catch {
@@ -381,8 +433,15 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
 
     switch (event.action) {
       case 'quit':
-        running = false;
-        cleanup();
+        shutdownAllSessions()
+          .then(() => {
+            running = false;
+            cleanup();
+          })
+          .catch(() => {
+            running = false;
+            cleanup();
+          });
         return;
 
       case 'new_session':

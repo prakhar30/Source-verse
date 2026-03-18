@@ -38,6 +38,7 @@ function createMockSessionManager() {
     listSessions: vi.fn(),
     updateStatus: vi.fn(),
     updatePid: vi.fn(),
+    updateClaudeSessionId: vi.fn(),
     removeSession: vi.fn(),
   };
 }
@@ -291,6 +292,7 @@ function createTestSession(
     tmuxSessionName: string;
     status: string;
     pid: number | null;
+    claudeSessionId: string | null;
     createdAt: string;
     updatedAt: string;
   }> = {},
@@ -303,6 +305,7 @@ function createTestSession(
     tmuxSessionName: 'sv-1',
     status: 'running',
     pid: 12345,
+    claudeSessionId: null,
     createdAt: new Date(Date.now() - 3600000).toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
@@ -734,7 +737,8 @@ describe('handleRestart', () => {
     expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
       'sv-1',
       session.worktreePath,
-      '--resume',
+      '--continue',
+      { raw: true },
     );
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
   });
@@ -758,9 +762,37 @@ describe('handleRestart', () => {
     expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
       'sv-1',
       session.worktreePath,
-      '--resume',
+      '--continue',
+      { raw: true },
     );
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
+  });
+
+  it('uses --resume with claudeSessionId when available', async () => {
+    const session = createTestSession({
+      status: 'suspended',
+      claudeSessionId: 'abc123-def4-5678-9012-abcdef345678',
+    });
+    mockSessionManager.getSession.mockResolvedValue(session);
+    mockTmuxSpawner.isCommandAvailable.mockResolvedValue(true);
+    mockTmuxSpawner.killWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(true);
+    mockTmuxSpawner.isInMainSession.mockResolvedValue(false);
+    mockTmuxSpawner.attachSession.mockResolvedValue(0);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleRestart(session.id, {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-1',
+      session.worktreePath,
+      '--resume abc123-def4-5678-9012-abcdef345678',
+      { raw: true },
+    );
   });
 });
 
@@ -892,7 +924,7 @@ describe('handleResumeAll', () => {
     expect(output).toContain('No suspended sessions to resume');
   });
 
-  it('resumes all suspended sessions with --resume flag', async () => {
+  it('resumes all suspended sessions with --continue when no claudeSessionId', async () => {
     const sessions = [
       createTestSession({
         id: 'aaa-1',
@@ -920,15 +952,58 @@ describe('handleResumeAll', () => {
     expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
       'sv-1',
       '/projects/app-sv-1',
-      '--resume',
+      '--continue',
+      { raw: true },
     );
     expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
       'sv-2',
       '/projects/app-sv-2',
-      '--resume',
+      '--continue',
+      { raw: true },
     );
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('aaa-1', 'running');
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith('bbb-2', 'running');
+  });
+
+  it('uses --resume with claudeSessionId when available', async () => {
+    const sessions = [
+      createTestSession({
+        id: 'aaa-1',
+        status: 'suspended',
+        tmuxSessionName: 'sv-1',
+        worktreePath: '/projects/app-sv-1',
+        claudeSessionId: 'claude-id-111',
+      }),
+      createTestSession({
+        id: 'bbb-2',
+        status: 'suspended',
+        tmuxSessionName: 'sv-2',
+        worktreePath: '/projects/app-sv-2',
+        claudeSessionId: null,
+      }),
+    ];
+    mockSessionManager.listSessions.mockResolvedValue(sessions);
+    mockTmuxSpawner.hasMainSession.mockResolvedValue(true);
+    mockTmuxSpawner.spawnClaudeInWindow.mockResolvedValue(undefined);
+    mockSessionManager.updateStatus.mockResolvedValue({});
+
+    await handleResumeAll('/projects/app', {
+      sessionManager: mockSessionManager as never,
+      tmuxSpawner: mockTmuxSpawner as never,
+    });
+
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-1',
+      '/projects/app-sv-1',
+      '--resume claude-id-111',
+      { raw: true },
+    );
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-2',
+      '/projects/app-sv-2',
+      '--continue',
+      { raw: true },
+    );
   });
 
   it('creates sv-main if it does not exist', async () => {
@@ -978,7 +1053,8 @@ describe('handleResumeAll', () => {
     expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
       'sv-1',
       expect.any(String),
-      '--resume',
+      '--continue',
+      { raw: true },
     );
   });
 });
