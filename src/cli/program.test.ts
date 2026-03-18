@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createProgram } from './program.js';
 
 vi.mock('./commands.js', () => ({
@@ -58,8 +58,15 @@ function parseArgs(...args: string[]) {
   return program.parseAsync(['node', 'source-verse', ...args]);
 }
 
+let stderrSpy: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   vi.clearAllMocks();
+  stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+});
+
+afterEach(() => {
+  stderrSpy.mockRestore();
 });
 
 describe('createProgram', () => {
