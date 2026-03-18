@@ -66,6 +66,28 @@ export async function assertHasRemote(repoPath: string): Promise<PreflightError 
   }
 }
 
+export async function assertGitRemoteAccessible(repoPath: string): Promise<PreflightError | null> {
+  try {
+    await execFileAsync('git', ['ls-remote', '--heads', 'origin', '--exit-code'], {
+      cwd: repoPath,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      timeout: 10_000,
+    });
+    return null;
+  } catch {
+    return {
+      check: 'git-auth',
+      message: [
+        'Cannot access git remote "origin". Git may not be configured for CLI authentication.',
+        'If you use GitHub Desktop, run one of:',
+        '  gh auth setup-git          (GitHub CLI)',
+        '  git config --global credential.helper store',
+        'Then try again.',
+      ].join('\n'),
+    };
+  }
+}
+
 export async function assertDirectoryWritable(dirPath: string): Promise<PreflightError | null> {
   const parentDir = dirname(dirPath);
   try {
@@ -145,6 +167,11 @@ export async function runPreflight(repoPath: string): Promise<PreflightResult> {
   const remoteError = await assertHasRemote(repoPath);
   if (remoteError) {
     errors.push(remoteError);
+  } else {
+    const authError = await assertGitRemoteAccessible(repoPath);
+    if (authError) {
+      errors.push(authError);
+    }
   }
 
   const permError = await assertDirectoryWritable(repoPath);
