@@ -809,9 +809,7 @@ describe('handleSuspendAll', () => {
   });
 
   it('shows message when no running sessions', async () => {
-    mockSessionManager.listSessions.mockResolvedValue([
-      createTestSession({ status: 'done' }),
-    ]);
+    mockSessionManager.listSessions.mockResolvedValue([createTestSession({ status: 'done' })]);
 
     await handleSuspendAll({
       sessionManager: mockSessionManager as never,
@@ -911,9 +909,7 @@ describe('handleResumeAll', () => {
   });
 
   it('shows message when no suspended sessions', async () => {
-    mockSessionManager.listSessions.mockResolvedValue([
-      createTestSession({ status: 'done' }),
-    ]);
+    mockSessionManager.listSessions.mockResolvedValue([createTestSession({ status: 'done' })]);
 
     await handleResumeAll('/projects/app', {
       sessionManager: mockSessionManager as never,

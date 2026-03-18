@@ -234,9 +234,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   }
 
   async function suspendAllSessions(): Promise<void> {
-    const runningSessions = sessions.filter(
-      (s) => s.status === 'running' && s.tmuxSessionName,
-    );
+    const runningSessions = sessions.filter((s) => s.status === 'running' && s.tmuxSessionName);
 
     if (runningSessions.length === 0) {
       writeRaw(`\n  ${style.fg.gray}No running sessions to suspend.${style.reset}`);
@@ -244,7 +242,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       return;
     }
 
-    writeRaw(`\n  ${style.fg.yellow}Suspending ${runningSessions.length} session(s)...${style.reset}`);
+    writeRaw(
+      `\n  ${style.fg.yellow}Suspending ${runningSessions.length} session(s)...${style.reset}`,
+    );
 
     // Send /exit to all running sessions
     for (const session of runningSessions) {
@@ -286,13 +286,13 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   }
 
   async function shutdownAllSessions(): Promise<void> {
-    const runningSessions = sessions.filter(
-      (s) => s.status === 'running' && s.tmuxSessionName,
-    );
+    const runningSessions = sessions.filter((s) => s.status === 'running' && s.tmuxSessionName);
 
     if (runningSessions.length === 0) return;
 
-    writeRaw(`\n  ${style.fg.yellow}Shutting down ${runningSessions.length} session(s)...${style.reset}`);
+    writeRaw(
+      `\n  ${style.fg.yellow}Shutting down ${runningSessions.length} session(s)...${style.reset}`,
+    );
 
     // Send /exit to all running sessions
     for (const session of runningSessions) {
@@ -339,9 +339,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   }
 
   async function resumeAllSessions(): Promise<void> {
-    const suspendedSessions = sessions.filter(
-      (s) => s.status === 'suspended' && s.tmuxSessionName,
-    );
+    const suspendedSessions = sessions.filter((s) => s.status === 'suspended' && s.tmuxSessionName);
 
     if (suspendedSessions.length === 0) {
       writeRaw(`\n  ${style.fg.gray}No suspended sessions to resume.${style.reset}`);
@@ -349,7 +347,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       return;
     }
 
-    writeRaw(`\n  ${style.fg.green}Resuming ${suspendedSessions.length} session(s)...${style.reset}`);
+    writeRaw(
+      `\n  ${style.fg.green}Resuming ${suspendedSessions.length} session(s)...${style.reset}`,
+    );
 
     for (const session of suspendedSessions) {
       try {
@@ -363,7 +363,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
         );
         await sessionManager.updateStatus(session.id, 'running');
       } catch {
-        writeRaw(`\n  ${style.fg.red}Failed to resume session ${session.id.slice(0, 8)}${style.reset}`);
+        writeRaw(
+          `\n  ${style.fg.red}Failed to resume session ${session.id.slice(0, 8)}${style.reset}`,
+        );
       }
     }
   }
@@ -459,7 +461,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
           return;
         }
         confirmAction = { type: 'quit' };
-        writeRaw(`\n  ${style.fg.red}Quit and clean up ${runningForQuit} running session(s)? This removes worktrees. [y/N]${style.reset} `);
+        writeRaw(
+          `\n  ${style.fg.red}Quit and clean up ${runningForQuit} running session(s)? This removes worktrees. [y/N]${style.reset} `,
+        );
         return;
       }
 

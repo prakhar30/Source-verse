@@ -589,7 +589,9 @@ export async function handleRestart(
 
   const claudeId = session.claudeSessionId;
   const claudeArgs = claudeId ? `--resume ${claudeId}` : '--continue';
-  await tmuxSpawner.spawnClaudeInWindow(sessionName, session.worktreePath, claudeArgs, { raw: true });
+  await tmuxSpawner.spawnClaudeInWindow(sessionName, session.worktreePath, claudeArgs, {
+    raw: true,
+  });
   await sessionManager.updateStatus(session.id, 'running');
 
   console.log(`  \u2713 Started Claude Code in window "${sessionName}"`);
@@ -613,9 +615,7 @@ export async function handleSuspendAll(
   const tmuxSpawner = deps.tmuxSpawner ?? new TmuxSpawner();
 
   const sessions = await sessionManager.listSessions();
-  const running = sessions.filter(
-    (s) => s.status === 'running' && s.tmuxSessionName,
-  );
+  const running = sessions.filter((s) => s.status === 'running' && s.tmuxSessionName);
 
   if (running.length === 0) {
     console.log('  No running sessions to suspend.');
@@ -659,7 +659,9 @@ export async function handleSuspendAll(
       await sessionManager.updateClaudeSessionId(session.id, claudeId);
     }
     await sessionManager.updateStatus(session.id, 'suspended');
-    console.log(`  \u2713 Suspended ${session.id.slice(0, 8)} (${session.branchName})${claudeId ? ` [${claudeId.slice(0, 8)}]` : ''}`);
+    console.log(
+      `  \u2713 Suspended ${session.id.slice(0, 8)} (${session.branchName})${claudeId ? ` [${claudeId.slice(0, 8)}]` : ''}`,
+    );
   }
 }
 
@@ -696,7 +698,9 @@ export async function handleResumeAll(
     try {
       const claudeId = session.claudeSessionId;
       const claudeArgs = claudeId ? `--resume ${claudeId}` : '--continue';
-      await tmuxSpawner.spawnClaudeInWindow(sessionName, session.worktreePath, claudeArgs, { raw: true });
+      await tmuxSpawner.spawnClaudeInWindow(sessionName, session.worktreePath, claudeArgs, {
+        raw: true,
+      });
       await sessionManager.updateStatus(session.id, 'running');
       console.log(`  \u2713 Resumed ${session.id.slice(0, 8)} (${session.branchName})`);
       lastWindowName = sessionName;
