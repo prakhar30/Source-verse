@@ -14,6 +14,7 @@ export type KeyAction =
   | 'quit'
   | 'help'
   | 'refresh'
+  | 'enter'
   | 'jump_to_session';
 
 export interface KeyEvent {
@@ -54,6 +55,9 @@ export function parseKeyInput(data: Buffer): KeyEvent | null {
   }
   if (raw === 'c') {
     return { action: 'cleanup' };
+  }
+  if (raw === '\r' || raw === '\n') {
+    return { action: 'enter' };
   }
 
   const digit = parseInt(raw, 10);

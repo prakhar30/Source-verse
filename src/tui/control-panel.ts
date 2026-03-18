@@ -116,11 +116,11 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     // Keybindings bar
     const keys = [
       `${style.bold}n${style.reset} New`,
-      `${style.bold}1-9${style.reset} Switch`,
-      `${style.bold}Tab${style.reset} Select`,
+      `${style.bold}Enter${style.reset}/${style.bold}1-9${style.reset} Open session`,
       `${style.bold}d${style.reset} Delete`,
       `${style.bold}c${style.reset} Cleanup`,
       `${style.bold}r${style.reset} Refresh`,
+      `${style.bold}?${style.reset} Help`,
       `${style.bold}q${style.reset} Quit`,
     ];
     writeRaw(`  ${style.fg.gray}${keys.join('  ')}${style.reset}`);
@@ -271,8 +271,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
         render();
         return;
 
+      case 'enter':
       case 'jump_to_session': {
-        const idx = (event.sessionNumber ?? 1) - 1;
+        const idx = event.action === 'enter' ? focusedIndex : (event.sessionNumber ?? 1) - 1;
         if (idx >= 0 && idx < sessions.length) {
           switchToSession(idx)
             .then(() => loadSessions())
@@ -331,19 +332,22 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   function renderHelp(): void {
     writeRaw(screen.clear + cursor.moveTo(1, 1));
     writeRaw(`\n  ${style.bold}Source-verse Help${style.reset}\n\n`);
-    writeRaw(`  ${style.bold}n${style.reset}          Create a new session\n`);
-    writeRaw(`  ${style.bold}1-9${style.reset}        Switch to session window\n`);
-    writeRaw(`  ${style.bold}Tab${style.reset}        Move cursor down\n`);
-    writeRaw(`  ${style.bold}Shift+Tab${style.reset}  Move cursor up\n`);
-    writeRaw(`  ${style.bold}d${style.reset}          Delete focused session\n`);
-    writeRaw(`  ${style.bold}c${style.reset}          Cleanup all done sessions\n`);
-    writeRaw(`  ${style.bold}r${style.reset}          Refresh session list\n`);
-    writeRaw(`  ${style.bold}q${style.reset}          Quit control panel\n`);
-    writeRaw(`\n  ${style.bold}Tmux shortcuts${style.reset} (while in a session window):\n`);
-    writeRaw(`  ${style.bold}Ctrl+b 0${style.reset}   Back to control panel\n`);
-    writeRaw(`  ${style.bold}Ctrl+b n${style.reset}   Next window\n`);
-    writeRaw(`  ${style.bold}Ctrl+b p${style.reset}   Previous window\n`);
-    writeRaw(`  ${style.bold}Ctrl+b d${style.reset}   Detach from tmux\n`);
+    writeRaw(`  ${style.bold}Control Panel${style.reset}\n`);
+    writeRaw(`  ${style.bold}n${style.reset}            Create a new session\n`);
+    writeRaw(`  ${style.bold}Enter${style.reset}        Open focused session\n`);
+    writeRaw(`  ${style.bold}1-9${style.reset}          Open session by number\n`);
+    writeRaw(`  ${style.bold}Tab${style.reset}          Move cursor down\n`);
+    writeRaw(`  ${style.bold}Shift+Tab${style.reset}    Move cursor up\n`);
+    writeRaw(`  ${style.bold}d${style.reset}            Stop focused session\n`);
+    writeRaw(`  ${style.bold}c${style.reset}            Cleanup all done sessions\n`);
+    writeRaw(`  ${style.bold}r${style.reset}            Refresh session list\n`);
+    writeRaw(`  ${style.bold}q${style.reset}            Quit control panel\n`);
+    writeRaw(`\n  ${style.bold}Inside a session window${style.reset}\n`);
+    writeRaw(`  ${style.bold}Ctrl+b 0${style.reset}     Back to this control panel\n`);
+    writeRaw(`  ${style.bold}Ctrl+b 1-9${style.reset}   Jump to session by number\n`);
+    writeRaw(`  ${style.bold}Ctrl+b n${style.reset}     Next window\n`);
+    writeRaw(`  ${style.bold}Ctrl+b p${style.reset}     Previous window\n`);
+    writeRaw(`  ${style.bold}Ctrl+b d${style.reset}     Detach (everything keeps running)\n`);
     writeRaw(`\n  ${style.fg.gray}Press any key to return${style.reset}`);
 
     // Wait for any key then re-render

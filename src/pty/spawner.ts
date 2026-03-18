@@ -38,6 +38,28 @@ export class TmuxSpawner {
       cwd,
       controlCommand,
     ]);
+    // Configure status bar with navigation hints
+    await this.configureStatusBar();
+  }
+
+  /** Set tmux status bar to show source-verse navigation hints. */
+  private async configureStatusBar(): Promise<void> {
+    const cmds: [string, string][] = [
+      ['status-style', 'bg=colour235,fg=colour248'],
+      ['status-left', '#[fg=colour117,bold] source-verse #[fg=colour248]│ '],
+      ['status-left-length', '20'],
+      ['status-right', '#[fg=colour248] Ctrl+b 0: control │ Ctrl+b d: detach '],
+      ['status-right-length', '50'],
+      ['window-status-format', ' #I:#W '],
+      ['window-status-current-format', '#[fg=colour117,bold] #I:#W '],
+    ];
+    for (const [option, value] of cmds) {
+      try {
+        await execFileAsync('tmux', ['set-option', '-t', MAIN_SESSION, option, value]);
+      } catch {
+        // Non-fatal: status bar is cosmetic
+      }
+    }
   }
 
   /** Check whether the sv-main session exists. */
