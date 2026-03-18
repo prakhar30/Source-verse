@@ -47,7 +47,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
   let sessions: Session[] = [];
   let focusedIndex = 0;
   let prompt: PromptState | null = null;
-  let confirmAction: { type: 'suspend_all' } | null = null;
+  let confirmAction: { type: 'suspend_all' | 'quit' } | null = null;
   let mergeWatcher: MergeWatcher | null = null;
   const tagline =
     Math.random() < 0.5
@@ -131,10 +131,10 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       `${style.bold}d${style.reset} Delete`,
       `${style.bold}c${style.reset} Cleanup`,
       `${style.bold}r${style.reset} Refresh`,
-      `${style.bold}Q${style.reset} Suspend all`,
       `${style.bold}R${style.reset} Resume all`,
       `${style.bold}?${style.reset} Help`,
-      `${style.bold}q${style.reset} Quit`,
+      `${style.bold}q${style.reset} Suspend & quit`,
+      `${style.bold}Q${style.reset} Quit & cleanup`,
     ];
     writeRaw(`  ${style.fg.gray}${keys.join('  ')}${style.reset}`);
   }
@@ -425,6 +425,16 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
             .catch(() => {
               loadSessions().then(() => render());
             });
+        } else if (action.type === 'quit') {
+          shutdownAllSessions()
+            .then(() => {
+              running = false;
+              cleanup();
+            })
+            .catch(() => {
+              running = false;
+              cleanup();
+            });
         }
         return;
       }
@@ -441,17 +451,17 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     if (!event) return;
 
     switch (event.action) {
-      case 'quit':
-        shutdownAllSessions()
-          .then(() => {
-            running = false;
-            cleanup();
-          })
-          .catch(() => {
-            running = false;
-            cleanup();
-          });
+      case 'quit': {
+        const runningForQuit = sessions.filter((s) => s.status === 'running').length;
+        if (runningForQuit === 0) {
+          running = false;
+          cleanup();
+          return;
+        }
+        confirmAction = { type: 'quit' };
+        writeRaw(`\n  ${style.fg.red}Quit and clean up ${runningForQuit} running session(s)? This removes worktrees. [y/N]${style.reset} `);
         return;
+      }
 
       case 'new_session':
         prompt = { text: '' };
@@ -510,17 +520,16 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
           .catch(() => {});
         return;
 
-      case 'suspend_all': {
-        const runningCount = sessions.filter((s) => s.status === 'running').length;
-        if (runningCount === 0) {
-          writeRaw(`\n  ${style.fg.gray}No running sessions to suspend.${style.reset}`);
-          sleep(1000).then(() => render());
-          return;
-        }
-        confirmAction = { type: 'suspend_all' };
-        writeRaw(`\n  ${style.fg.yellow}Suspend all ${runningCount} running session(s) and quit? [y/N]${style.reset} `);
+      case 'suspend_all':
+        suspendAllSessions()
+          .then(() => {
+            running = false;
+            cleanup();
+          })
+          .catch(() => {
+            loadSessions().then(() => render());
+          });
         return;
-      }
 
       case 'resume_all':
         resumeAllSessions()
@@ -547,9 +556,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     writeRaw(`  ${style.bold}d${style.reset}            Stop focused session\n`);
     writeRaw(`  ${style.bold}c${style.reset}            Cleanup all done sessions\n`);
     writeRaw(`  ${style.bold}r${style.reset}            Refresh session list\n`);
-    writeRaw(`  ${style.bold}Q${style.reset}            Suspend all sessions and quit\n`);
     writeRaw(`  ${style.bold}R${style.reset}            Resume all suspended sessions\n`);
-    writeRaw(`  ${style.bold}q${style.reset}            Quit control panel\n`);
+    writeRaw(`  ${style.bold}q${style.reset}            Suspend all sessions and quit\n`);
+    writeRaw(`  ${style.bold}Q${style.reset}            Quit and clean up all sessions\n`);
     writeRaw(`\n  ${style.bold}Inside a session window${style.reset}\n`);
     writeRaw(`  ${style.bold}Ctrl+b 0${style.reset}     Back to this control panel\n`);
     writeRaw(`  ${style.bold}Ctrl+b 1-9${style.reset}   Jump to session by number\n`);

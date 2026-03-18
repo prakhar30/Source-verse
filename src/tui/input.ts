@@ -34,13 +34,13 @@ const CTRL_C = '\x03';
 export function parseKeyInput(data: Buffer): KeyEvent | null {
   const raw = data.toString('utf-8');
 
-  if (raw === 'Q') {
+  if (raw === 'q' || raw === CTRL_C) {
     return { action: 'suspend_all' };
   }
   if (raw === 'R') {
     return { action: 'resume_all' };
   }
-  if (raw === 'q' || raw === CTRL_C) {
+  if (raw === 'Q') {
     return { action: 'quit' };
   }
   if (raw === TAB) {
