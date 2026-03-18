@@ -72,11 +72,15 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     const termWidth = process.stdout.columns || 80;
 
     // Title
-    writeRaw(`  ${style.bold}Source-verse${style.reset} ${style.fg.gray}— Session Manager${style.reset}\n\n`);
+    writeRaw(
+      `  ${style.bold}Source-verse${style.reset} ${style.fg.gray}— Session Manager${style.reset}\n\n`,
+    );
 
     if (sessions.length === 0) {
       writeRaw(`  ${style.fg.gray}No sessions.${style.reset}\n`);
-      writeRaw(`  ${style.fg.gray}Press ${style.bold}n${style.reset}${style.fg.gray} to create one.${style.reset}\n`);
+      writeRaw(
+        `  ${style.fg.gray}Press ${style.bold}n${style.reset}${style.fg.gray} to create one.${style.reset}\n`,
+      );
     } else {
       // Table header
       const colNum = 4;
@@ -84,10 +88,11 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       const colTask = Math.min(40, Math.floor((termWidth - 20) * 0.35));
       const colBranch = Math.min(30, Math.floor((termWidth - 20) * 0.35));
 
-      const header =
-        `  ${style.fg.gray}${fitText('#', colNum)} ${fitText('', colStatus)} ${fitText('Task', colTask)} ${fitText('Status', 10)} ${fitText('Branch', colBranch)}${style.reset}`;
+      const header = `  ${style.fg.gray}${fitText('#', colNum)} ${fitText('', colStatus)} ${fitText('Task', colTask)} ${fitText('Status', 10)} ${fitText('Branch', colBranch)}${style.reset}`;
       writeRaw(header + '\n');
-      writeRaw(`  ${style.fg.gray}${'─'.repeat(Math.min(termWidth - 4, colNum + colStatus + colTask + colBranch + 14))}${style.reset}\n`);
+      writeRaw(
+        `  ${style.fg.gray}${'─'.repeat(Math.min(termWidth - 4, colNum + colStatus + colTask + colBranch + 14))}${style.reset}\n`,
+      );
 
       sessions.forEach((session, i) => {
         const isFocused = i === focusedIndex;
@@ -135,7 +140,12 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
 
     try {
       const worktreePath = await gitManager.createWorktree(sessionId, branchName);
-      const session = await sessionManager.createSession(task, worktreePath, branchName, sessionName);
+      const session = await sessionManager.createSession(
+        task,
+        worktreePath,
+        branchName,
+        sessionName,
+      );
 
       const claudeAvailable = await tmuxSpawner.isCommandAvailable('claude');
       if (claudeAvailable) {
@@ -143,7 +153,9 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
         await sessionManager.updateStatus(session.id, 'running');
       }
     } catch (err) {
-      writeRaw(`\n  ${style.fg.red}Error: ${err instanceof Error ? err.message : String(err)}${style.reset}\n`);
+      writeRaw(
+        `\n  ${style.fg.red}Error: ${err instanceof Error ? err.message : String(err)}${style.reset}\n`,
+      );
       await sleep(1500);
     }
   }

@@ -1,4 +1,11 @@
-export type SessionStatus = 'created' | 'running' | 'waiting' | 'done' | 'error' | 'merged' | 'cleaned_up';
+export type SessionStatus =
+  | 'created'
+  | 'running'
+  | 'waiting'
+  | 'done'
+  | 'error'
+  | 'merged'
+  | 'cleaned_up';
 
 export interface Session {
   id: string;

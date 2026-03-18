@@ -43,9 +43,7 @@ describe('assertGitRepository', () => {
   it('throws with a clear message for a non-git directory', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'sv-test-'));
     try {
-      await expect(assertGitRepository(tempDir)).rejects.toThrow(
-        'Not a git repository',
-      );
+      await expect(assertGitRepository(tempDir)).rejects.toThrow('Not a git repository');
     } finally {
       await rm(tempDir, { recursive: true });
     }

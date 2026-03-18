@@ -55,7 +55,14 @@ describe('GitManager', () => {
 
       expect(result).toBe('/home/user/projects/my-app-sv-abc123');
       expect(mockExecGit).toHaveBeenCalledWith(
-        ['worktree', 'add', '-b', 'sv/fix-login', '/home/user/projects/my-app-sv-abc123', 'origin/main'],
+        [
+          'worktree',
+          'add',
+          '-b',
+          'sv/fix-login',
+          '/home/user/projects/my-app-sv-abc123',
+          'origin/main',
+        ],
         '/home/user/projects/my-app',
       );
     });
@@ -105,7 +112,8 @@ describe('GitManager', () => {
   describe('removeWorktree', () => {
     it('removes worktree and deletes merged branch', async () => {
       mockExecGit
-        .mockResolvedValueOnce( // worktree list (findBranchForWorktree — runs BEFORE remove)
+        .mockResolvedValueOnce(
+          // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
         .mockResolvedValueOnce('') // worktree remove
@@ -123,7 +131,8 @@ describe('GitManager', () => {
 
     it('force deletes unmerged branch when flag is set', async () => {
       mockExecGit
-        .mockResolvedValueOnce( // worktree list (findBranchForWorktree — runs BEFORE remove)
+        .mockResolvedValueOnce(
+          // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
         .mockResolvedValueOnce('') // worktree remove
@@ -141,7 +150,8 @@ describe('GitManager', () => {
 
     it('does not delete unmerged branch when force flag is false', async () => {
       mockExecGit
-        .mockResolvedValueOnce( // worktree list (findBranchForWorktree — runs BEFORE remove)
+        .mockResolvedValueOnce(
+          // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
         .mockResolvedValueOnce('') // worktree remove
@@ -337,7 +347,9 @@ describe('GitManager', () => {
       expect(result[0]!.sessionId).toBe('42');
       // Main repo and unrelated worktree are excluded
       expect(result.find((w) => w.path === '/home/user/projects/my-app')).toBeUndefined();
-      expect(result.find((w) => w.path === '/home/user/projects/unrelated-worktree')).toBeUndefined();
+      expect(
+        result.find((w) => w.path === '/home/user/projects/unrelated-worktree'),
+      ).toBeUndefined();
     });
   });
 

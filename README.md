@@ -1,5 +1,7 @@
 # source-verse
 
+[![CI](https://github.com/prakhar30/Source-verse/actions/workflows/ci.yml/badge.svg)](https://github.com/prakhar30/Source-verse/actions/workflows/ci.yml)
+
 Run multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions in parallel from a single terminal.
 
 source-verse lets you spin up isolated git worktrees, each running its own Claude Code instance, and manage them all through one CLI or an interactive TUI dashboard. Work on a bug fix, a new feature, and a refactor — all at the same time — without juggling terminal windows or duplicating repos.

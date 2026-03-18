@@ -279,17 +279,19 @@ describe('handleNew', () => {
   });
 });
 
-function createTestSession(overrides: Partial<{
-  id: string;
-  taskDescription: string;
-  worktreePath: string;
-  branchName: string;
-  tmuxSessionName: string;
-  status: string;
-  pid: number | null;
-  createdAt: string;
-  updatedAt: string;
-}> = {}) {
+function createTestSession(
+  overrides: Partial<{
+    id: string;
+    taskDescription: string;
+    worktreePath: string;
+    branchName: string;
+    tmuxSessionName: string;
+    status: string;
+    pid: number | null;
+    createdAt: string;
+    updatedAt: string;
+  }> = {},
+) {
   return {
     id: 'abcdef12-3456-7890-abcd-ef1234567890',
     taskDescription: 'fix login bug',
@@ -352,7 +354,8 @@ describe('handleList', () => {
 
   it('truncates long task descriptions', async () => {
     const session = createTestSession({
-      taskDescription: 'This is a very long task description that should be truncated at forty characters',
+      taskDescription:
+        'This is a very long task description that should be truncated at forty characters',
     });
     mockSessionManager.listSessions.mockResolvedValue([session]);
     mockTmuxSpawner.hasWindow.mockResolvedValue(true);
@@ -369,8 +372,15 @@ describe('handleList', () => {
 
   it('displays multiple sessions', async () => {
     const sessions = [
-      createTestSession({ id: 'aaaa1111-0000-0000-0000-000000000000', taskDescription: 'task one' }),
-      createTestSession({ id: 'bbbb2222-0000-0000-0000-000000000000', taskDescription: 'task two', status: 'done' }),
+      createTestSession({
+        id: 'aaaa1111-0000-0000-0000-000000000000',
+        taskDescription: 'task one',
+      }),
+      createTestSession({
+        id: 'bbbb2222-0000-0000-0000-000000000000',
+        taskDescription: 'task two',
+        status: 'done',
+      }),
     ];
     mockSessionManager.listSessions.mockResolvedValue(sessions);
     mockTmuxSpawner.hasWindow.mockResolvedValue(true);
@@ -451,7 +461,6 @@ describe('handleStop', () => {
   let mockSessionManager: ReturnType<typeof createMockSessionManager>;
   let mockGitManager: ReturnType<typeof createMockGitManager>;
   let mockTmuxSpawner: ReturnType<typeof createMockTmuxSpawner>;
-  let consoleSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -459,7 +468,7 @@ describe('handleStop', () => {
     mockSessionManager = createMockSessionManager();
     mockGitManager = createMockGitManager();
     mockTmuxSpawner = createMockTmuxSpawner();
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     process.exitCode = undefined;
   });
@@ -544,7 +553,10 @@ describe('handleCleanup', () => {
   function simulateTTYConfirmation(answer: string) {
     Object.defineProperty(process.stdin, 'isTTY', { value: true, writable: true });
     const originalOnce = process.stdin.once.bind(process.stdin);
-    vi.spyOn(process.stdin, 'once').mockImplementation(((event: string, cb: (data: string) => void) => {
+    vi.spyOn(process.stdin, 'once').mockImplementation(((
+      event: string,
+      cb: (data: string) => void,
+    ) => {
       if (event === 'data') {
         cb(answer);
         return process.stdin;
@@ -564,8 +576,16 @@ describe('handleCleanup', () => {
 
   it('warns about skipped active sessions', async () => {
     mockSessionManager.listSessions.mockResolvedValue([
-      createTestSession({ id: 'running1-0000-0000-0000-000000000000', status: 'running', branchName: 'sv/active-task' }),
-      createTestSession({ id: 'done1234-0000-0000-0000-000000000000', status: 'done', branchName: 'sv/finished-task' }),
+      createTestSession({
+        id: 'running1-0000-0000-0000-000000000000',
+        status: 'running',
+        branchName: 'sv/active-task',
+      }),
+      createTestSession({
+        id: 'done1234-0000-0000-0000-000000000000',
+        status: 'done',
+        branchName: 'sv/finished-task',
+      }),
     ]);
     mockSessionManager.updateStatus.mockResolvedValue({});
     mockGitManager.listWorktrees.mockResolvedValue([]);
@@ -580,9 +600,7 @@ describe('handleCleanup', () => {
   });
 
   it('cancels cleanup when user declines', async () => {
-    mockSessionManager.listSessions.mockResolvedValue([
-      createTestSession({ status: 'done' }),
-    ]);
+    mockSessionManager.listSessions.mockResolvedValue([createTestSession({ status: 'done' })]);
 
     simulateTTYConfirmation('n');
 
@@ -710,7 +728,11 @@ describe('handleRestart', () => {
       tmuxSpawner: mockTmuxSpawner as never,
     });
 
-    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith('sv-1', session.worktreePath, '--resume');
+    expect(mockTmuxSpawner.spawnClaudeInWindow).toHaveBeenCalledWith(
+      'sv-1',
+      session.worktreePath,
+      '--resume',
+    );
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'running');
   });
 });

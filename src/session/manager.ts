@@ -111,7 +111,9 @@ export class SessionManager {
       return parsed as Session[];
     } catch (error: unknown) {
       const isFileNotFound =
-        error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT';
+        error instanceof Error &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'ENOENT';
 
       if (isFileNotFound) {
         return [];

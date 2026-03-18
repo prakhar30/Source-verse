@@ -113,7 +113,8 @@ export async function assertTmuxInstalled(): Promise<PreflightError | null> {
   if (!installed) {
     return {
       check: 'tmux',
-      message: 'tmux is not installed. Install it:\n  brew install tmux   (macOS)\n  apt install tmux    (Debian/Ubuntu)',
+      message:
+        'tmux is not installed. Install it:\n  brew install tmux   (macOS)\n  apt install tmux    (Debian/Ubuntu)',
     };
   }
   return null;

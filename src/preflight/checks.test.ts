@@ -43,7 +43,9 @@ const mockExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
 const mockAccess = access as unknown as ReturnType<typeof vi.fn>;
 const mockIsGitRepo = isGitRepository as unknown as ReturnType<typeof vi.fn>;
 
-function setupExecFile(handler: (cmd: string, args: string[]) => { stdout?: string; error?: Error }) {
+function setupExecFile(
+  handler: (cmd: string, args: string[]) => { stdout?: string; error?: Error },
+) {
   mockExecFile.mockImplementation((...callArgs: unknown[]) => {
     const cmd = callArgs[0] as string;
     const args = callArgs[1] as string[];

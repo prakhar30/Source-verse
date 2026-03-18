@@ -85,11 +85,7 @@ export class TmuxSpawner {
 
   /** Switch to a window by name within sv-main (only works when inside tmux). */
   async selectWindow(windowName: string): Promise<void> {
-    await execFileAsync('tmux', [
-      'select-window',
-      '-t',
-      `${MAIN_SESSION}:${windowName}`,
-    ]);
+    await execFileAsync('tmux', ['select-window', '-t', `${MAIN_SESSION}:${windowName}`]);
   }
 
   /** Check whether a named window exists in sv-main. */
@@ -101,11 +97,7 @@ export class TmuxSpawner {
   /** Kill a specific window in sv-main. */
   async killWindow(windowName: string): Promise<void> {
     try {
-      await execFileAsync('tmux', [
-        'kill-window',
-        '-t',
-        `${MAIN_SESSION}:${windowName}`,
-      ]);
+      await execFileAsync('tmux', ['kill-window', '-t', `${MAIN_SESSION}:${windowName}`]);
     } catch {
       // Window may already be dead
     }
@@ -139,7 +131,11 @@ export class TmuxSpawner {
   }
 
   /** Spawn Claude Code in a new window within sv-main. */
-  async spawnClaudeInWindow(windowName: string, cwd: string, taskDescription: string): Promise<void> {
+  async spawnClaudeInWindow(
+    windowName: string,
+    cwd: string,
+    taskDescription: string,
+  ): Promise<void> {
     // Kill stale window with same name if it exists
     const exists = await this.hasWindow(windowName);
     if (exists) {
@@ -157,11 +153,7 @@ export class TmuxSpawner {
 
   /** Get the name of the current tmux session (only valid when inside tmux). */
   async getCurrentSessionName(): Promise<string> {
-    const { stdout } = await execFileAsync('tmux', [
-      'display-message',
-      '-p',
-      '#{session_name}',
-    ]);
+    const { stdout } = await execFileAsync('tmux', ['display-message', '-p', '#{session_name}']);
     return stdout.trim();
   }
 
@@ -226,15 +218,7 @@ export class TmuxSpawner {
     const { sessionName, command, args, cwd } = options;
     const fullCommand = [command, ...args].join(' ');
 
-    await execFileAsync('tmux', [
-      'new-session',
-      '-d',
-      '-s',
-      sessionName,
-      '-c',
-      cwd,
-      fullCommand,
-    ]);
+    await execFileAsync('tmux', ['new-session', '-d', '-s', sessionName, '-c', cwd, fullCommand]);
   }
 
   /** @deprecated Use spawnClaudeInWindow instead. */
@@ -277,11 +261,7 @@ export class TmuxSpawner {
   /** List all source-verse tmux sessions (those starting with "sv-"). */
   async listSessions(): Promise<string[]> {
     try {
-      const { stdout } = await execFileAsync('tmux', [
-        'list-sessions',
-        '-F',
-        '#{session_name}',
-      ]);
+      const { stdout } = await execFileAsync('tmux', ['list-sessions', '-F', '#{session_name}']);
       return stdout
         .trim()
         .split('\n')
