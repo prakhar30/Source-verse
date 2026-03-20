@@ -60,6 +60,23 @@ describe('TmuxSpawner', () => {
         'node control.js',
       ]);
 
+      // Verify status bar configuration
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'set-option',
+        '-t',
+        'sv-main',
+        'status-style',
+        'bg=colour235,fg=colour248',
+      ]);
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'set-option',
+        '-t',
+        'sv-main',
+        'status-right-length',
+        '70',
+      ]);
+
       // Verify terminal behavior: mouse enabled
       expect(mockExecFile).toHaveBeenCalledWith('tmux', [
         'set-option',
@@ -67,15 +84,6 @@ describe('TmuxSpawner', () => {
         'sv-main',
         'mouse',
         'on',
-      ]);
-
-      // Verify terminal behavior: scrollback increased
-      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
-        'set-option',
-        '-t',
-        'sv-main',
-        'history-limit',
-        '50000',
       ]);
 
       // Verify terminal behavior: clipboard enabled
