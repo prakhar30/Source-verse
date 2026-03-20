@@ -99,9 +99,7 @@ describe('TmuxSpawner', () => {
         return { stdout: '', stderr: '' };
       });
 
-      await expect(
-        spawner.createMainSession('node control.js', '/repo'),
-      ).resolves.toBeUndefined();
+      await expect(spawner.createMainSession('node control.js', '/repo')).resolves.toBeUndefined();
     });
   });
 
