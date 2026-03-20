@@ -68,7 +68,6 @@ export class TmuxSpawner {
   private async configureTerminalBehavior(): Promise<void> {
     const options: [string, string][] = [
       ['mouse', 'on'],
-      ['history-limit', '50000'], // TODO: test with and without — may not be needed since Claude Code uses alternate screen buffer
       ['set-clipboard', 'on'],
     ];
     for (const [option, value] of options) {
