@@ -569,6 +569,8 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     writeRaw(`  ${style.bold}Ctrl+b n${style.reset}     Next window\n`);
     writeRaw(`  ${style.bold}Ctrl+b p${style.reset}     Previous window\n`);
     writeRaw(`  ${style.bold}Ctrl+b d${style.reset}     Detach (everything keeps running)\n`);
+    writeRaw(`  ${style.bold}Mouse scroll${style.reset} Scroll through conversation\n`);
+    writeRaw(`  ${style.bold}Shift+click${style.reset} Select text (bypasses tmux mouse)\n`);
     writeRaw(`\n  ${style.fg.gray}Press any key to return${style.reset}`);
 
     // Wait for any key then re-render

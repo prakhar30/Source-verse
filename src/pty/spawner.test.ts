@@ -41,6 +41,76 @@ describe('TmuxSpawner', () => {
     });
   });
 
+  describe('createMainSession', () => {
+    it('creates session and configures status bar and terminal behavior', async () => {
+      mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });
+
+      await spawner.createMainSession('node control.js', '/home/user/repo');
+
+      // Verify session creation
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'new-session',
+        '-d',
+        '-s',
+        'sv-main',
+        '-n',
+        'control',
+        '-c',
+        '/home/user/repo',
+        'node control.js',
+      ]);
+
+      // Verify status bar configuration
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'set-option',
+        '-t',
+        'sv-main',
+        'status-style',
+        'bg=colour235,fg=colour248',
+      ]);
+
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'set-option',
+        '-t',
+        'sv-main',
+        'status-right-length',
+        '70',
+      ]);
+
+      // Verify terminal behavior: mouse enabled
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'set-option',
+        '-t',
+        'sv-main',
+        'mouse',
+        'on',
+      ]);
+
+      // Verify terminal behavior: clipboard enabled
+      expect(mockExecFile).toHaveBeenCalledWith('tmux', [
+        'set-option',
+        '-t',
+        'sv-main',
+        'set-clipboard',
+        'on',
+      ]);
+    });
+
+    it('does not throw if terminal behavior options fail', async () => {
+      let callCount = 0;
+      mockExecFile.mockImplementation(async () => {
+        callCount++;
+        // Let session creation succeed, fail on some set-option calls
+        if (callCount > 1 && callCount % 2 === 0) {
+          throw new Error('option not supported');
+        }
+        return { stdout: '', stderr: '' };
+      });
+
+      await expect(spawner.createMainSession('node control.js', '/repo')).resolves.toBeUndefined();
+    });
+  });
+
   describe('createSession', () => {
     it('calls tmux new-session with correct arguments', async () => {
       mockExecFile.mockResolvedValue({ stdout: '', stderr: '' });

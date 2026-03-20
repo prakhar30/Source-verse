@@ -40,6 +40,8 @@ export class TmuxSpawner {
     ]);
     // Configure status bar with navigation hints
     await this.configureStatusBar();
+    // Configure terminal behavior (mouse, scrollback, etc.)
+    await this.configureTerminalBehavior();
   }
 
   /** Set tmux status bar to show source-verse navigation hints. */
@@ -48,8 +50,8 @@ export class TmuxSpawner {
       ['status-style', 'bg=colour235,fg=colour248'],
       ['status-left', '#[fg=colour117,bold] source-verse #[fg=colour248]│ '],
       ['status-left-length', '20'],
-      ['status-right', '#[fg=colour248] Ctrl+b 0: control │ Ctrl+b d: detach '],
-      ['status-right-length', '50'],
+      ['status-right', '#[fg=colour248] Scroll: mouse │ Ctrl+b 0: control │ Ctrl+b d: detach '],
+      ['status-right-length', '70'],
       ['window-status-format', ' #I:#W '],
       ['window-status-current-format', '#[fg=colour117,bold] #I:#W '],
     ];
@@ -58,6 +60,21 @@ export class TmuxSpawner {
         await execFileAsync('tmux', ['set-option', '-t', MAIN_SESSION, option, value]);
       } catch {
         // Non-fatal: status bar is cosmetic
+      }
+    }
+  }
+
+  /** Configure terminal behavior for scrolling and mouse support. */
+  private async configureTerminalBehavior(): Promise<void> {
+    const options: [string, string][] = [
+      ['mouse', 'on'],
+      ['set-clipboard', 'on'],
+    ];
+    for (const [option, value] of options) {
+      try {
+        await execFileAsync('tmux', ['set-option', '-t', MAIN_SESSION, option, value]);
+      } catch {
+        // Non-fatal: terminal behavior options are best-effort
       }
     }
   }
