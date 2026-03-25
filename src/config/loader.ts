@@ -35,6 +35,7 @@ export async function loadConfig(stateDir = DEFAULT_STATE_DIR): Promise<SourceVe
 
 function mergeWithDefaults(parsed: Record<string, unknown>): SourceVerseConfig {
   const mergeDetection = parsed.mergeDetection as Record<string, unknown> | undefined;
+  const worktree = parsed.worktree as Record<string, unknown> | undefined;
 
   return {
     mergeDetection: {
@@ -46,6 +47,15 @@ function mergeWithDefaults(parsed: Record<string, unknown>): SourceVerseConfig {
         typeof mergeDetection?.autoCleanup === 'boolean'
           ? mergeDetection.autoCleanup
           : DEFAULT_CONFIG.mergeDetection.autoCleanup,
+    },
+    worktree: {
+      cacheDirs: Array.isArray(worktree?.cacheDirs)
+        ? (worktree.cacheDirs as string[])
+        : DEFAULT_CONFIG.worktree.cacheDirs,
+      warmDiskCache:
+        typeof worktree?.warmDiskCache === 'boolean'
+          ? worktree.warmDiskCache
+          : DEFAULT_CONFIG.worktree.warmDiskCache,
     },
   };
 }

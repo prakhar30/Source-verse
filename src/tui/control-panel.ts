@@ -9,7 +9,7 @@ import type { SessionManager } from '../session/manager.js';
 import type { GitManager } from '../git/manager.js';
 import type { TmuxSpawner } from '../pty/spawner.js';
 import type { Session } from '../session/types.js';
-import type { MergeDetectionConfig } from '../config/types.js';
+import type { MergeDetectionConfig, WorktreeConfig } from '../config/types.js';
 import { MergeWatcher } from '../merge/watcher.js';
 import { slugifyTaskName } from '../git/slugify.js';
 import { resolveClaudeSessionId } from '../session/claude-resolver.js';
@@ -23,6 +23,7 @@ export interface ControlPanelDeps {
   tmuxSpawner: TmuxSpawner;
   repoPath: string;
   mergeDetectionConfig?: MergeDetectionConfig;
+  worktreeConfig?: WorktreeConfig;
 }
 
 interface PromptState {
@@ -147,7 +148,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     const sessionName = tmuxName(sessionId);
 
     try {
-      const worktreePath = await gitManager.createWorktree(sessionId, branchName);
+      const worktreePath = await gitManager.createWorktree(sessionId, branchName, deps.worktreeConfig);
       const session = await sessionManager.createSession(
         task,
         worktreePath,

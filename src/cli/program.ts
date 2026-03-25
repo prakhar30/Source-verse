@@ -82,6 +82,7 @@ export function createProgram(): Command {
         tmuxSpawner: new TmuxSpawner(),
         repoPath,
         mergeDetectionConfig: config.mergeDetection,
+        worktreeConfig: config.worktree,
       });
     });
 
