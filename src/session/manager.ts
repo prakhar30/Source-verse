@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { Session, SessionStatus } from './types.js';
+import type { Session, SessionStatus, CopyMode } from './types.js';
 
 const DEFAULT_STATE_DIR = join(process.env.HOME ?? tmpdir(), '.source-verse');
 const SESSIONS_FILENAME = 'sessions.json';
@@ -21,6 +21,7 @@ export class SessionManager {
     worktreePath: string,
     branchName: string,
     tmuxSessionName: string,
+    copyMode?: CopyMode,
   ): Promise<Session> {
     const sessions = await this.loadSessions();
     const now = new Date().toISOString();
@@ -34,6 +35,7 @@ export class SessionManager {
       status: 'created',
       pid: null,
       claudeSessionId: null,
+      copyMode,
       createdAt: now,
       updatedAt: now,
     };

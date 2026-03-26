@@ -1,7 +1,7 @@
 import type { SessionManager } from '../session/manager.js';
 import type { GitManager } from '../git/manager.js';
 import type { Session } from '../session/types.js';
-import type { MergeDetectionConfig } from '../config/types.js';
+import type { MergeDetectionConfig, WorktreeConfig } from '../config/types.js';
 import { DEFAULT_CONFIG } from '../config/types.js';
 
 export interface MergeEvent {
@@ -17,6 +17,7 @@ export class MergeWatcher {
   private readonly sessionManager: SessionManager;
   private readonly gitManager: GitManager;
   private readonly config: MergeDetectionConfig;
+  private readonly worktreeConfig?: WorktreeConfig;
   private readonly onMergeDetected: MergeCallback;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -25,11 +26,13 @@ export class MergeWatcher {
     gitManager: GitManager,
     onMergeDetected: MergeCallback,
     config: MergeDetectionConfig = DEFAULT_CONFIG.mergeDetection,
+    worktreeConfig?: WorktreeConfig,
   ) {
     this.sessionManager = sessionManager;
     this.gitManager = gitManager;
     this.onMergeDetected = onMergeDetected;
     this.config = config;
+    this.worktreeConfig = worktreeConfig;
   }
 
   start(): void {
@@ -89,7 +92,7 @@ export class MergeWatcher {
       const worktree = worktrees.find((w) => w.path === session.worktreePath);
 
       if (worktree) {
-        await this.gitManager.removeWorktree(worktree.sessionId);
+        await this.gitManager.removeWorktree(worktree.sessionId, false, this.worktreeConfig);
       }
 
       await this.sessionManager.updateStatus(session.id, 'cleaned_up');

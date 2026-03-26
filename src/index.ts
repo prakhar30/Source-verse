@@ -12,7 +12,7 @@ export type { WorktreeInfo } from './git/manager.js';
 export { execGit, GitCommandError } from './git/exec.js';
 export { slugifyTaskName } from './git/slugify.js';
 export { SessionManager } from './session/manager.js';
-export type { Session, SessionStatus } from './session/types.js';
+export type { Session, SessionStatus, CopyMode } from './session/types.js';
 export { SessionReconciler } from './session/reconciler.js';
 export type { TmuxChecker, PathChecker, ReconcileResult } from './session/reconciler.js';
 export { TmuxSpawner, MAIN_SESSION } from './pty/spawner.js';
@@ -25,6 +25,9 @@ export {
   warmDiskCache,
   reflinkCopyDir,
   getReflinkCopyArgs,
+  cloneRepoDir,
+  moveToTrash,
+  isApfsSupported,
 } from './platform/copy.js';
 export type { CopyCacheResult, CopiedDir } from './platform/copy.js';
 export { MergeWatcher } from './merge/watcher.js';

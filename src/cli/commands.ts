@@ -5,6 +5,7 @@ import { slugifyTaskName } from '../git/slugify.js';
 import { SessionManager } from '../session/manager.js';
 import { TmuxSpawner, MAIN_SESSION } from '../pty/spawner.js';
 import type { Session, SessionStatus } from '../session/types.js';
+import type { WorktreeConfig } from '../config/types.js';
 import { runPreflight } from '../preflight/checks.js';
 import { resolveClaudeSessionId } from '../session/claude-resolver.js';
 import { loadConfig } from '../config/loader.js';
@@ -66,8 +67,15 @@ export async function handleNew(
   const config = await loadConfig();
   const worktreePath = await gitManager.createWorktree(sessionId, branchName, config.worktree);
   const defaultBranch = await gitManager.getDefaultBranch();
+  const copyMode = config.worktree.useApfsClone ? 'clone' : 'worktree';
 
-  const session = await sessionManager.createSession(task, worktreePath, branchName, sessionName);
+  const session = await sessionManager.createSession(
+    task,
+    worktreePath,
+    branchName,
+    sessionName,
+    copyMode,
+  );
 
   console.log('');
   console.log(`  \u2713 Created worktree: ${worktreePath}`);
@@ -308,11 +316,18 @@ export async function handleStop(
   await sessionManager.updateStatus(session.id, 'done');
   console.log(`  \u2713 Session ${session.id.slice(0, 8)} status set to done`);
 
+  const config = await loadConfig();
   let shouldCleanup = options.cleanup ?? false;
 
   if (!shouldCleanup && process.stdin.isTTY) {
-    const isMerged = await gitManager.isBranchMerged(session.branchName).catch(() => false);
-    const hasUnpushed = await gitManager.hasUnpushedCommits(session.branchName).catch(() => false);
+    // For clones, check branch status in the clone directory; for worktrees, use the source repo
+    const branchCheckCwd = session.copyMode === 'clone' ? session.worktreePath : undefined;
+    const isMerged = await gitManager
+      .isBranchMerged(session.branchName, branchCheckCwd)
+      .catch(() => false);
+    const hasUnpushed = await gitManager
+      .hasUnpushedCommits(session.branchName, branchCheckCwd)
+      .catch(() => false);
 
     if (hasUnpushed) {
       console.log(`  \u26a0 Branch ${session.branchName} has unpushed commits.`);
@@ -329,7 +344,7 @@ export async function handleStop(
     const worktree = worktrees.find((w) => w.path === session.worktreePath);
 
     if (worktree) {
-      await gitManager.removeWorktree(worktree.sessionId);
+      await gitManager.removeWorktree(worktree.sessionId, false, config.worktree);
       console.log(`  \u2713 Removed worktree: ${session.worktreePath}`);
     }
 
@@ -378,7 +393,8 @@ export async function handleCleanup(
     return;
   }
 
-  const freedSizes = await cleanupSessions(cleanable, sessionManager, gitManager);
+  const config = await loadConfig();
+  const freedSizes = await cleanupSessions(cleanable, sessionManager, gitManager, config.worktree);
   printCleanupSummary(cleanable.length, freedSizes);
 }
 
@@ -406,6 +422,7 @@ async function cleanupSessions(
   sessions: Session[],
   sessionManager: SessionManager,
   gitManager: GitManager,
+  worktreeConfig?: WorktreeConfig,
 ): Promise<string[]> {
   const worktrees = await gitManager.listWorktrees();
   const freedSizes: string[] = [];
@@ -415,7 +432,7 @@ async function cleanupSessions(
     const worktree = worktrees.find((w) => w.path === session.worktreePath);
 
     if (worktree) {
-      await gitManager.removeWorktree(worktree.sessionId);
+      await gitManager.removeWorktree(worktree.sessionId, false, worktreeConfig);
       console.log(`  \u2713 Removed worktree: ${session.worktreePath}`);
     }
 
