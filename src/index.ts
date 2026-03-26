@@ -20,7 +20,12 @@ export type { TmuxSessionInfo, SpawnOptions, WindowInfo } from './pty/types.js';
 export { loadConfig } from './config/loader.js';
 export type { SourceVerseConfig, MergeDetectionConfig, WorktreeConfig } from './config/types.js';
 export { DEFAULT_CONFIG, DEFAULT_CACHE_DIRS } from './config/types.js';
-export { copyBuildCaches, warmDiskCache, reflinkCopyDir, getReflinkCopyArgs } from './platform/copy.js';
+export {
+  copyBuildCaches,
+  warmDiskCache,
+  reflinkCopyDir,
+  getReflinkCopyArgs,
+} from './platform/copy.js';
 export type { CopyCacheResult, CopiedDir } from './platform/copy.js';
 export { MergeWatcher } from './merge/watcher.js';
 export type { MergeEvent, MergeCallback } from './merge/watcher.js';

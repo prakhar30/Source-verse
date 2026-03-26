@@ -148,7 +148,11 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     const sessionName = tmuxName(sessionId);
 
     try {
-      const worktreePath = await gitManager.createWorktree(sessionId, branchName, deps.worktreeConfig);
+      const worktreePath = await gitManager.createWorktree(
+        sessionId,
+        branchName,
+        deps.worktreeConfig,
+      );
       const session = await sessionManager.createSession(
         task,
         worktreePath,

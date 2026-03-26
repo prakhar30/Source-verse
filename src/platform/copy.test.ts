@@ -14,11 +14,9 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 vi.mock('node:util', () => ({
-  promisify:
-    () =>
-    async (_cmd: string, _args: string[]) => {
-      return { stdout: '', stderr: '' };
-    },
+  promisify: () => async (_cmd: string, _args: string[]) => {
+    return { stdout: '', stderr: '' };
+  },
 }));
 
 import { stat } from 'node:fs/promises';
