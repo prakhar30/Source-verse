@@ -1,5 +1,7 @@
 import { basename, resolve, dirname } from 'node:path';
 import { execGit } from './exec.js';
+import { copyBuildCaches, warmDiskCache } from '../platform/copy.js';
+import type { WorktreeConfig } from '../config/types.js';
 
 export interface WorktreeInfo {
   path: string;
@@ -29,7 +31,11 @@ export class GitManager {
     );
   }
 
-  async createWorktree(sessionId: string, branchName: string): Promise<string> {
+  async createWorktree(
+    sessionId: string,
+    branchName: string,
+    worktreeConfig?: WorktreeConfig,
+  ): Promise<string> {
     const repoName = basename(this.repoPath);
     const parentDir = dirname(this.repoPath);
     const worktreePath = resolve(parentDir, `${repoName}-sv-${sessionId}`);
@@ -45,6 +51,16 @@ export class GitManager {
       ['worktree', 'add', '-b', branchName, worktreePath, `origin/${defaultBranch}`],
       this.repoPath,
     );
+
+    // Copy build caches using reflink (copy-on-write) when available
+    if (worktreeConfig?.cacheDirs && worktreeConfig.cacheDirs.length > 0) {
+      await copyBuildCaches(this.repoPath, worktreePath, worktreeConfig.cacheDirs);
+    }
+
+    // Warm the OS disk cache in background so subsequent file operations are fast
+    if (worktreeConfig?.warmDiskCache) {
+      warmDiskCache(worktreePath);
+    }
 
     return worktreePath;
   }

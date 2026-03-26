@@ -4,6 +4,16 @@ vi.mock('../git/slugify.js', () => ({
   slugifyTaskName: vi.fn(),
 }));
 
+vi.mock('../config/loader.js', () => ({
+  loadConfig: vi.fn().mockResolvedValue({
+    mergeDetection: { pollingIntervalMs: 60000, autoCleanup: true },
+    worktree: {
+      cacheDirs: ['node_modules', '.next', 'dist', 'build', 'target', '.venv'],
+      warmDiskCache: true,
+    },
+  }),
+}));
+
 import {
   handleNew,
   handleList,
@@ -132,7 +142,11 @@ describe('handleNew', () => {
     await callHandleNew('fix login bug');
 
     expect(mockSlugify).toHaveBeenCalledWith('fix login bug');
-    expect(mockGitManager.createWorktree).toHaveBeenCalledWith('1', 'sv/fix-login-bug');
+    expect(mockGitManager.createWorktree).toHaveBeenCalledWith(
+      '1',
+      'sv/fix-login-bug',
+      expect.objectContaining({ cacheDirs: expect.any(Array) }),
+    );
   });
 
   it('generates session id 1 when no existing worktrees', async () => {
@@ -140,7 +154,11 @@ describe('handleNew', () => {
 
     await callHandleNew('task');
 
-    expect(mockGitManager.createWorktree).toHaveBeenCalledWith('1', 'sv/fix-login-bug');
+    expect(mockGitManager.createWorktree).toHaveBeenCalledWith(
+      '1',
+      'sv/fix-login-bug',
+      expect.objectContaining({ cacheDirs: expect.any(Array) }),
+    );
   });
 
   it('increments session id based on existing worktrees', async () => {
@@ -152,7 +170,11 @@ describe('handleNew', () => {
 
     await callHandleNew('new task');
 
-    expect(mockGitManager.createWorktree).toHaveBeenCalledWith('4', 'sv/fix-login-bug');
+    expect(mockGitManager.createWorktree).toHaveBeenCalledWith(
+      '4',
+      'sv/fix-login-bug',
+      expect.objectContaining({ cacheDirs: expect.any(Array) }),
+    );
   });
 
   it('creates a session record after worktree creation', async () => {

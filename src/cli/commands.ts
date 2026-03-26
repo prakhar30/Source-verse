@@ -7,6 +7,7 @@ import { TmuxSpawner, MAIN_SESSION } from '../pty/spawner.js';
 import type { Session, SessionStatus } from '../session/types.js';
 import { runPreflight } from '../preflight/checks.js';
 import { resolveClaudeSessionId } from '../session/claude-resolver.js';
+import { loadConfig } from '../config/loader.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,7 +63,8 @@ export async function handleNew(
   const sessionId = await generateSessionId(gitManager);
   const sessionName = tmuxName(sessionId);
 
-  const worktreePath = await gitManager.createWorktree(sessionId, branchName);
+  const config = await loadConfig();
+  const worktreePath = await gitManager.createWorktree(sessionId, branchName, config.worktree);
   const defaultBranch = await gitManager.getDefaultBranch();
 
   const session = await sessionManager.createSession(task, worktreePath, branchName, sessionName);

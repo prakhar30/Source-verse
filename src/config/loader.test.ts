@@ -71,4 +71,40 @@ describe('loadConfig', () => {
     expect(config.mergeDetection.pollingIntervalMs).toBe(60000);
     expect(config.mergeDetection.autoCleanup).toBe(true);
   });
+
+  it('returns default worktree config when not specified', async () => {
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.cacheDirs).toEqual(DEFAULT_CONFIG.worktree.cacheDirs);
+    expect(config.worktree.warmDiskCache).toBe(true);
+  });
+
+  it('reads custom cacheDirs from config', async () => {
+    const partial = { worktree: { cacheDirs: ['vendor', '.cache'] } };
+    await writeFile(join(tempDir, 'config.json'), JSON.stringify(partial), 'utf-8');
+
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.cacheDirs).toEqual(['vendor', '.cache']);
+    expect(config.worktree.warmDiskCache).toBe(true);
+  });
+
+  it('reads warmDiskCache when set to false', async () => {
+    const partial = { worktree: { warmDiskCache: false } };
+    await writeFile(join(tempDir, 'config.json'), JSON.stringify(partial), 'utf-8');
+
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.warmDiskCache).toBe(false);
+    expect(config.worktree.cacheDirs).toEqual(DEFAULT_CONFIG.worktree.cacheDirs);
+  });
+
+  it('uses default cacheDirs when config has non-array value', async () => {
+    const weird = { worktree: { cacheDirs: 'not-an-array' } };
+    await writeFile(join(tempDir, 'config.json'), JSON.stringify(weird), 'utf-8');
+
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.cacheDirs).toEqual(DEFAULT_CONFIG.worktree.cacheDirs);
+  });
 });
