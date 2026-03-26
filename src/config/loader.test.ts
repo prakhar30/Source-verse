@@ -1,6 +1,6 @@
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, platform } from 'node:os';
 import { loadConfig } from './loader.js';
 import { DEFAULT_CONFIG } from './types.js';
 
@@ -15,21 +15,28 @@ describe('loadConfig', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  // loadConfig resolves useApfsClone based on platform at runtime,
+  // so we build the expected default dynamically.
+  const expectedDefault = {
+    ...DEFAULT_CONFIG,
+    worktree: { ...DEFAULT_CONFIG.worktree, useApfsClone: platform() === 'darwin' },
+  };
+
   it('returns default config when no config file exists', async () => {
     const config = await loadConfig(tempDir);
-    expect(config).toEqual(DEFAULT_CONFIG);
+    expect(config).toEqual(expectedDefault);
   });
 
   it('returns default config when config file is invalid JSON', async () => {
     await writeFile(join(tempDir, 'config.json'), 'not json', 'utf-8');
     const config = await loadConfig(tempDir);
-    expect(config).toEqual(DEFAULT_CONFIG);
+    expect(config).toEqual(expectedDefault);
   });
 
   it('returns default config when config file contains a non-object', async () => {
     await writeFile(join(tempDir, 'config.json'), '"string"', 'utf-8');
     const config = await loadConfig(tempDir);
-    expect(config).toEqual(DEFAULT_CONFIG);
+    expect(config).toEqual(expectedDefault);
   });
 
   it('merges partial config with defaults', async () => {
@@ -106,5 +113,50 @@ describe('loadConfig', () => {
     const config = await loadConfig(tempDir);
 
     expect(config.worktree.cacheDirs).toEqual(DEFAULT_CONFIG.worktree.cacheDirs);
+  });
+
+  it('defaults useApfsClone based on platform', async () => {
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.useApfsClone).toBe(platform() === 'darwin');
+  });
+
+  it('respects explicit useApfsClone override', async () => {
+    const partial = { worktree: { useApfsClone: false } };
+    await writeFile(join(tempDir, 'config.json'), JSON.stringify(partial), 'utf-8');
+
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.useApfsClone).toBe(false);
+  });
+
+  it('defaults fastTeardown to true', async () => {
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.fastTeardown).toBe(true);
+  });
+
+  it('respects explicit fastTeardown override', async () => {
+    const partial = { worktree: { fastTeardown: false } };
+    await writeFile(join(tempDir, 'config.json'), JSON.stringify(partial), 'utf-8');
+
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.fastTeardown).toBe(false);
+  });
+
+  it('defaults enableFsmonitor to true', async () => {
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.enableFsmonitor).toBe(true);
+  });
+
+  it('respects explicit enableFsmonitor override', async () => {
+    const partial = { worktree: { enableFsmonitor: false } };
+    await writeFile(join(tempDir, 'config.json'), JSON.stringify(partial), 'utf-8');
+
+    const config = await loadConfig(tempDir);
+
+    expect(config.worktree.enableFsmonitor).toBe(false);
   });
 });

@@ -5,9 +5,27 @@ vi.mock('./exec.js', () => ({
   execGit: vi.fn(),
 }));
 
+vi.mock('node:fs/promises', () => ({
+  readdir: vi.fn().mockResolvedValue([]),
+  stat: vi.fn().mockRejectedValue(new Error('ENOENT')),
+}));
+
+vi.mock('../platform/copy.js', () => ({
+  cloneRepoDir: vi.fn().mockResolvedValue(undefined),
+  copyBuildCaches: vi.fn().mockResolvedValue({ dirs: [], reflink: false }),
+  moveToTrash: vi.fn().mockResolvedValue(undefined),
+  warmDiskCache: vi.fn(),
+}));
+
 import { execGit } from './exec.js';
+import { readdir, stat } from 'node:fs/promises';
+import { cloneRepoDir, moveToTrash } from '../platform/copy.js';
 
 const mockExecGit = vi.mocked(execGit);
+const mockReaddir = vi.mocked(readdir);
+const mockStat = vi.mocked(stat);
+const mockCloneRepoDir = vi.mocked(cloneRepoDir);
+const mockMoveToTrash = vi.mocked(moveToTrash);
 
 describe('GitManager', () => {
   let manager: GitManager;
@@ -15,6 +33,9 @@ describe('GitManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     manager = new GitManager('/home/user/projects/my-app');
+    // Default: no clones on filesystem
+    mockReaddir.mockResolvedValue([]);
+    mockStat.mockRejectedValue(new Error('ENOENT'));
   });
 
   describe('getDefaultBranch', () => {
@@ -109,11 +130,92 @@ describe('GitManager', () => {
     });
   });
 
+  describe('createWorktree with useApfsClone', () => {
+    const cloneConfig = {
+      cacheDirs: [],
+      warmDiskCache: false,
+      useApfsClone: true,
+      fastTeardown: true,
+      enableFsmonitor: true,
+    };
+
+    it('uses cloneRepoDir instead of git worktree add', async () => {
+      mockExecGit
+        .mockResolvedValueOnce('  main\n') // getDefaultBranch
+        .mockResolvedValueOnce('') // fetch origin main
+        .mockResolvedValueOnce('') // checkout -b in clone
+        .mockResolvedValueOnce(''); // config core.fsmonitor
+
+      // stat should throw ENOENT (path doesn't exist)
+      mockStat.mockRejectedValueOnce(new Error('ENOENT'));
+
+      const result = await manager.createWorktree('1', 'sv/my-task', cloneConfig);
+
+      expect(result).toBe('/home/user/projects/my-app-sv-1');
+      expect(mockCloneRepoDir).toHaveBeenCalledWith(
+        '/home/user/projects/my-app',
+        '/home/user/projects/my-app-sv-1',
+      );
+      expect(mockExecGit).toHaveBeenCalledWith(
+        ['checkout', '-b', 'sv/my-task', 'origin/main'],
+        '/home/user/projects/my-app-sv-1',
+      );
+    });
+
+    it('enables fsmonitor when configured', async () => {
+      mockExecGit
+        .mockResolvedValueOnce('  main\n') // getDefaultBranch
+        .mockResolvedValueOnce('') // fetch
+        .mockResolvedValueOnce('') // checkout -b
+        .mockResolvedValueOnce(''); // config core.fsmonitor
+
+      mockStat.mockRejectedValueOnce(new Error('ENOENT'));
+
+      await manager.createWorktree('1', 'sv/my-task', cloneConfig);
+
+      expect(mockExecGit).toHaveBeenCalledWith(
+        ['config', 'core.fsmonitor', 'true'],
+        '/home/user/projects/my-app-sv-1',
+      );
+    });
+
+    it('does not enable fsmonitor when disabled', async () => {
+      mockExecGit
+        .mockResolvedValueOnce('  main\n') // getDefaultBranch
+        .mockResolvedValueOnce('') // fetch
+        .mockResolvedValueOnce(''); // checkout -b
+
+      mockStat.mockRejectedValueOnce(new Error('ENOENT'));
+
+      await manager.createWorktree('1', 'sv/my-task', {
+        ...cloneConfig,
+        enableFsmonitor: false,
+      });
+
+      expect(mockExecGit).not.toHaveBeenCalledWith(
+        ['config', 'core.fsmonitor', 'true'],
+        expect.anything(),
+      );
+    });
+
+    it('throws when destination path already exists', async () => {
+      mockExecGit
+        .mockResolvedValueOnce('  main\n') // getDefaultBranch
+        .mockResolvedValueOnce(''); // fetch
+
+      // stat returns successfully (path exists)
+      mockStat.mockResolvedValueOnce({ isDirectory: () => true } as never);
+
+      await expect(manager.createWorktree('1', 'sv/my-task', cloneConfig)).rejects.toThrow(
+        'Path already exists',
+      );
+    });
+  });
+
   describe('removeWorktree', () => {
     it('removes worktree and deletes merged branch', async () => {
       mockExecGit
         .mockResolvedValueOnce(
-          // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
         .mockResolvedValueOnce('') // worktree remove
@@ -132,7 +234,6 @@ describe('GitManager', () => {
     it('force deletes unmerged branch when flag is set', async () => {
       mockExecGit
         .mockResolvedValueOnce(
-          // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
         .mockResolvedValueOnce('') // worktree remove
@@ -151,7 +252,6 @@ describe('GitManager', () => {
     it('does not delete unmerged branch when force flag is false', async () => {
       mockExecGit
         .mockResolvedValueOnce(
-          // worktree list (findBranchForWorktree — runs BEFORE remove)
           'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix-login\n\n',
         )
         .mockResolvedValueOnce('') // worktree remove
@@ -167,6 +267,52 @@ describe('GitManager', () => {
       expect(mockExecGit).not.toHaveBeenCalledWith(
         expect.arrayContaining(['branch', '-D']),
         expect.anything(),
+      );
+    });
+  });
+
+  describe('removeWorktree with fastTeardown', () => {
+    const fastConfig = {
+      cacheDirs: [],
+      warmDiskCache: false,
+      useApfsClone: true,
+      fastTeardown: true,
+      enableFsmonitor: true,
+    };
+
+    it('uses moveToTrash for APFS clones', async () => {
+      // isCloneDirectory check: .git is a directory
+      mockStat.mockResolvedValueOnce({ isDirectory: () => true } as never);
+
+      await manager.removeWorktree('abc123', false, fastConfig);
+
+      expect(mockMoveToTrash).toHaveBeenCalledWith('/home/user/projects/my-app-sv-abc123');
+      expect(mockExecGit).not.toHaveBeenCalledWith(
+        expect.arrayContaining(['worktree', 'remove']),
+        expect.anything(),
+      );
+    });
+
+    it('falls back to git worktree remove for real worktrees', async () => {
+      // isCloneDirectory check: .git is a file (worktree)
+      mockStat.mockResolvedValueOnce({ isDirectory: () => false } as never);
+      // findBranchForWorktree
+      mockExecGit.mockResolvedValueOnce(
+        'worktree /home/user/projects/my-app-sv-abc123\nbranch refs/heads/sv/fix\n\n',
+      );
+      // worktree remove
+      mockExecGit.mockResolvedValueOnce('');
+      // getDefaultBranch (isBranchMerged)
+      mockExecGit.mockResolvedValueOnce('  main\n');
+      // branch --merged
+      mockExecGit.mockResolvedValueOnce('  main\n');
+
+      await manager.removeWorktree('abc123', false, fastConfig);
+
+      expect(mockMoveToTrash).not.toHaveBeenCalled();
+      expect(mockExecGit).toHaveBeenCalledWith(
+        ['worktree', 'remove', '--force', '/home/user/projects/my-app-sv-abc123'],
+        '/home/user/projects/my-app',
       );
     });
   });
@@ -238,6 +384,57 @@ describe('GitManager', () => {
       expect(result[0].sessionId).toBe('s1');
       expect(result[1].sessionId).toBe('s2');
     });
+
+    it('includes APFS clones from filesystem scan', async () => {
+      // git worktree list returns nothing
+      mockExecGit.mockResolvedValueOnce(
+        'worktree /home/user/projects/my-app\nHEAD abc\nbranch refs/heads/main\n\n',
+      );
+
+      // readdir returns a clone directory
+      mockReaddir.mockResolvedValueOnce(['my-app-sv-5', 'other-dir'] as never);
+
+      // isCloneDirectory: .git is a directory
+      mockStat.mockResolvedValueOnce({ isDirectory: () => true } as never);
+
+      // getBranchInClone
+      mockExecGit.mockResolvedValueOnce('sv/cloned-task\n');
+
+      const result = await manager.listWorktrees();
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        path: '/home/user/projects/my-app-sv-5',
+        branch: 'sv/cloned-task',
+        sessionId: '5',
+      });
+    });
+
+    it('deduplicates: git worktrees take precedence over clones', async () => {
+      // git worktree list returns sv-1
+      const porcelainOutput = [
+        'worktree /home/user/projects/my-app',
+        'HEAD abc1234',
+        'branch refs/heads/main',
+        '',
+        'worktree /home/user/projects/my-app-sv-1',
+        'HEAD def5678',
+        'branch refs/heads/sv/task',
+        '',
+      ].join('\n');
+      mockExecGit.mockResolvedValueOnce(porcelainOutput);
+
+      // readdir also returns my-app-sv-1 (same directory)
+      mockReaddir.mockResolvedValueOnce(['my-app-sv-1'] as never);
+      mockStat.mockResolvedValueOnce({ isDirectory: () => true } as never);
+      mockExecGit.mockResolvedValueOnce('sv/task\n');
+
+      const result = await manager.listWorktrees();
+
+      // Should only have 1 entry, not 2
+      expect(result).toHaveLength(1);
+      expect(result[0].sessionId).toBe('1');
+    });
   });
 
   describe('fetchDefaultBranch', () => {
@@ -273,25 +470,25 @@ describe('GitManager', () => {
       const result = await manager.isBranchMerged('sv/fix-login');
       expect(result).toBe(false);
     });
+
+    it('accepts optional cwd parameter', async () => {
+      mockExecGit
+        .mockResolvedValueOnce('  main\n') // getDefaultBranch
+        .mockResolvedValueOnce('  main\n  sv/fix-login\n'); // branch --merged
+
+      await manager.isBranchMerged('sv/fix-login', '/tmp/clone-dir');
+
+      expect(mockExecGit).toHaveBeenCalledWith(['branch', '--merged', 'main'], '/tmp/clone-dir');
+    });
   });
 
   describe('NFR-7 safety: original repo protection', () => {
     it('removeWorktree never targets the original repo path', async () => {
-      // sessionId that would resolve to the repo path would require
-      // the repoName to be empty or the pattern to break — but let's
-      // verify the guard explicitly
       const repoPath = '/home/user/projects/my-app';
-
-      // The constructed path is: /home/user/projects/my-app-sv-{sessionId}
-      // This can never equal /home/user/projects/my-app for any sessionId
-      // But we test the guard fires if it somehow did
       const guardedManager = new GitManager(repoPath);
 
-      // Try a sessionId that would be pathological (empty string)
-      // Path would be: /home/user/projects/my-app-sv-
-      // Still not equal to repoPath, so it should proceed to git command
-      mockExecGit.mockResolvedValueOnce(''); // worktree remove
       mockExecGit.mockResolvedValueOnce(''); // worktree list (findBranch)
+      mockExecGit.mockResolvedValueOnce(''); // worktree remove
 
       await guardedManager.removeWorktree('test-session');
       expect(mockExecGit).toHaveBeenCalledWith(
@@ -316,9 +513,7 @@ describe('GitManager', () => {
 
       const result = await manager.listWorktrees();
 
-      // The main worktree (my-app) must never appear
       expect(result.every((w) => w.path !== '/home/user/projects/my-app')).toBe(true);
-      // Only sv- prefixed worktrees appear
       expect(result).toHaveLength(1);
       expect(result[0]!.sessionId).toBe('1');
     });
@@ -345,7 +540,6 @@ describe('GitManager', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]!.sessionId).toBe('42');
-      // Main repo and unrelated worktree are excluded
       expect(result.find((w) => w.path === '/home/user/projects/my-app')).toBeUndefined();
       expect(
         result.find((w) => w.path === '/home/user/projects/unrelated-worktree'),
@@ -374,8 +568,8 @@ describe('GitManager', () => {
 
     it('returns true when remote branch does not exist but local has commits', async () => {
       mockExecGit
-        .mockRejectedValueOnce(new Error('unknown revision')) // origin/branch not found
-        .mockResolvedValueOnce('abc1234 initial\n'); // local branch has commits
+        .mockRejectedValueOnce(new Error('unknown revision'))
+        .mockResolvedValueOnce('abc1234 initial\n');
 
       const result = await manager.hasUnpushedCommits('sv/new-branch');
       expect(result).toBe(true);
@@ -388,6 +582,17 @@ describe('GitManager', () => {
 
       const result = await manager.hasUnpushedCommits('sv/nonexistent');
       expect(result).toBe(false);
+    });
+
+    it('accepts optional cwd parameter', async () => {
+      mockExecGit.mockResolvedValueOnce('abc1234 some commit\n');
+
+      await manager.hasUnpushedCommits('sv/fix-login', '/tmp/clone-dir');
+
+      expect(mockExecGit).toHaveBeenCalledWith(
+        ['log', 'origin/sv/fix-login..sv/fix-login', '--oneline'],
+        '/tmp/clone-dir',
+      );
     });
   });
 });

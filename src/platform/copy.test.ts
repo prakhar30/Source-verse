@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getReflinkCopyArgs, copyBuildCaches, warmDiskCache } from './copy.js';
+import {
+  getReflinkCopyArgs,
+  copyBuildCaches,
+  warmDiskCache,
+  cloneRepoDir,
+  moveToTrash,
+  isApfsSupported,
+} from './copy.js';
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb?: Function) => {
@@ -7,10 +14,13 @@ vi.mock('node:child_process', () => ({
     if (cb) cb(null, '', '');
     return child;
   }),
+  spawn: vi.fn(() => ({ unref: vi.fn() })),
 }));
 
 vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
+  rename: vi.fn().mockResolvedValue(undefined),
+  mkdir: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('node:util', () => ({
@@ -19,23 +29,17 @@ vi.mock('node:util', () => ({
   },
 }));
 
-import { stat } from 'node:fs/promises';
+import { stat, rename, mkdir } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 
 const mockStat = vi.mocked(stat);
+const mockRename = vi.mocked(rename);
+const mockMkdir = vi.mocked(mkdir);
+const mockSpawn = vi.mocked(spawn);
 
 describe('getReflinkCopyArgs', () => {
-  const originalPlatform = process.platform;
-
-  afterEach(() => {
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
-  });
-
   it('returns -c -R for darwin (macOS)', () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    // Re-import to pick up platform change — but since os.platform() reads at call time,
-    // we need to test via the module. For unit test purposes, we test the function shape.
     const result = getReflinkCopyArgs();
-    // On the test runner platform, just verify it returns a valid shape
     expect(result).toHaveProperty('args');
     expect(result).toHaveProperty('supported');
     expect(Array.isArray(result.args)).toBe(true);
@@ -89,5 +93,58 @@ describe('copyBuildCaches', () => {
 describe('warmDiskCache', () => {
   it('does not throw', () => {
     expect(() => warmDiskCache('/some/path')).not.toThrow();
+  });
+});
+
+describe('cloneRepoDir', () => {
+  it('does not throw when called', async () => {
+    await expect(cloneRepoDir('/source', '/dest')).resolves.not.toThrow();
+  });
+});
+
+describe('moveToTrash', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMkdir.mockResolvedValue(undefined);
+    mockRename.mockResolvedValue(undefined);
+    mockSpawn.mockReturnValue({ unref: vi.fn() } as never);
+  });
+
+  it('rejects paths that do not match -sv- convention', async () => {
+    await expect(moveToTrash('/projects/my-app')).rejects.toThrow(
+      'does not match source-verse naming',
+    );
+  });
+
+  it('accepts paths that match -sv- convention', async () => {
+    await expect(moveToTrash('/projects/my-app-sv-1')).resolves.not.toThrow();
+  });
+
+  it('creates trash directory and renames', async () => {
+    await moveToTrash('/projects/my-app-sv-1');
+
+    expect(mockMkdir).toHaveBeenCalledWith(expect.stringContaining('/tmp/sv-trash-'), {
+      recursive: true,
+    });
+    expect(mockRename).toHaveBeenCalledWith(
+      '/projects/my-app-sv-1',
+      expect.stringContaining('my-app-sv-1'),
+    );
+  });
+
+  it('spawns background rm -rf', async () => {
+    await moveToTrash('/projects/my-app-sv-1');
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'rm',
+      ['-rf', expect.stringContaining('/tmp/sv-trash-')],
+      { detached: true, stdio: 'ignore' },
+    );
+  });
+});
+
+describe('isApfsSupported', () => {
+  it('returns a boolean', () => {
+    expect(typeof isApfsSupported()).toBe('boolean');
   });
 });

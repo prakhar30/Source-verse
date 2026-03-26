@@ -10,6 +10,9 @@ vi.mock('../config/loader.js', () => ({
     worktree: {
       cacheDirs: ['node_modules', '.next', 'dist', 'build', 'target', '.venv'],
       warmDiskCache: true,
+      useApfsClone: false,
+      fastTeardown: true,
+      enableFsmonitor: true,
     },
   }),
 }));
@@ -187,6 +190,7 @@ describe('handleNew', () => {
       '/projects/my-app-sv-1',
       'sv/fix-login-bug',
       'sv-1',
+      'worktree',
     );
   });
 
@@ -548,7 +552,11 @@ describe('handleStop', () => {
       tmuxSpawner: mockTmuxSpawner as never,
     });
 
-    expect(mockGitManager.removeWorktree).toHaveBeenCalledWith('1');
+    expect(mockGitManager.removeWorktree).toHaveBeenCalledWith(
+      '1',
+      false,
+      expect.objectContaining({ fastTeardown: true }),
+    );
     expect(mockSessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'cleaned_up');
   });
 });

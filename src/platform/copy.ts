@@ -1,7 +1,9 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { platform } from 'node:os';
-import { stat } from 'node:fs/promises';
+import { stat, rename, mkdir } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 
@@ -110,6 +112,49 @@ export interface CopiedDir {
 export interface CopyCacheResult {
   dirs: CopiedDir[];
   reflink: boolean;
+}
+
+/**
+ * Clone an entire directory using the fastest available method (APFS reflink on macOS).
+ * The destination must not already exist.
+ */
+export async function cloneRepoDir(source: string, destination: string): Promise<void> {
+  const { args } = getReflinkCopyArgs();
+  await execFileAsync('cp', [...args, source, destination]);
+}
+
+/**
+ * Move a directory to a trash location and delete it in the background.
+ * The move (rename) is near-instant; the actual deletion is fire-and-forget.
+ *
+ * Safety: Rejects paths that don't match the `-sv-` naming convention.
+ */
+export async function moveToTrash(dirPath: string): Promise<void> {
+  const dirName = basename(dirPath);
+  if (!dirName.includes('-sv-')) {
+    throw new Error(`Refusing to trash path that does not match source-verse naming: ${dirPath}`);
+  }
+
+  const suffix = randomBytes(4).toString('hex');
+  const trashDir = `/tmp/sv-trash-${Date.now()}-${suffix}`;
+  await mkdir(trashDir, { recursive: true });
+
+  const trashPath = `${trashDir}/${dirName}`;
+  await rename(dirPath, trashPath);
+
+  // Background deletion — fire and forget
+  const child = spawn('rm', ['-rf', trashDir], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+}
+
+/**
+ * Returns true if the current platform supports APFS clone (macOS).
+ */
+export function isApfsSupported(): boolean {
+  return platform() === 'darwin';
 }
 
 async function directoryExists(path: string): Promise<boolean> {

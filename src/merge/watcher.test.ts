@@ -101,7 +101,7 @@ describe('MergeWatcher', () => {
 
       const events = await watcher.checkForMerges();
 
-      expect(deps.gitManager.removeWorktree).toHaveBeenCalledWith('1');
+      expect(deps.gitManager.removeWorktree).toHaveBeenCalledWith('1', false, undefined);
       expect(deps.sessionManager.updateStatus).toHaveBeenCalledWith(session.id, 'cleaned_up');
       expect(events[0].cleanedUp).toBe(true);
     });

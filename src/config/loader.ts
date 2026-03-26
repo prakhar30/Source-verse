@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, platform } from 'node:os';
 import type { SourceVerseConfig } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 
@@ -56,6 +56,18 @@ function mergeWithDefaults(parsed: Record<string, unknown>): SourceVerseConfig {
         typeof worktree?.warmDiskCache === 'boolean'
           ? worktree.warmDiskCache
           : DEFAULT_CONFIG.worktree.warmDiskCache,
+      useApfsClone:
+        typeof worktree?.useApfsClone === 'boolean'
+          ? worktree.useApfsClone
+          : platform() === 'darwin',
+      fastTeardown:
+        typeof worktree?.fastTeardown === 'boolean'
+          ? worktree.fastTeardown
+          : DEFAULT_CONFIG.worktree.fastTeardown,
+      enableFsmonitor:
+        typeof worktree?.enableFsmonitor === 'boolean'
+          ? worktree.enableFsmonitor
+          : DEFAULT_CONFIG.worktree.enableFsmonitor,
     },
   };
 }

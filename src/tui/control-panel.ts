@@ -153,11 +153,13 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
         branchName,
         deps.worktreeConfig,
       );
+      const copyMode = deps.worktreeConfig?.useApfsClone ? 'clone' : 'worktree';
       const session = await sessionManager.createSession(
         task,
         worktreePath,
         branchName,
         sessionName,
+        copyMode,
       );
 
       const claudeAvailable = await tmuxSpawner.isCommandAvailable('claude');
@@ -197,20 +199,17 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
     let cleaned = 0;
 
     for (const session of doneSessions) {
-      // Kill window if still alive (safe - already has internal try/catch)
       if (session.tmuxSessionName) {
         await tmuxSpawner.killWindow(session.tmuxSessionName);
       }
-      // Remove worktree and branch (may fail if already deleted)
       try {
         const worktree = worktrees.find((w) => w.path === session.worktreePath);
         if (worktree) {
-          await gitManager.removeWorktree(worktree.sessionId, true);
+          await gitManager.removeWorktree(worktree.sessionId, true, deps.worktreeConfig);
         }
       } catch {
         // Worktree may already be gone — that's fine
       }
-      // Always remove the session record
       await sessionManager.removeSession(session.id);
       cleaned++;
     }
@@ -334,7 +333,7 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       try {
         const worktree = worktrees.find((w) => w.path === session.worktreePath);
         if (worktree) {
-          await gitManager.removeWorktree(worktree.sessionId, true);
+          await gitManager.removeWorktree(worktree.sessionId, true, deps.worktreeConfig);
         }
       } catch {
         // Worktree may already be gone
@@ -603,12 +602,12 @@ export async function startControlPanel(deps: ControlPanelDeps): Promise<void> {
       sessionManager,
       gitManager,
       (_event) => {
-        // Re-render when a merge is detected
         loadSessions()
           .then(() => render())
           .catch(() => {});
       },
       deps.mergeDetectionConfig,
+      deps.worktreeConfig,
     );
     mergeWatcher.start();
   }
